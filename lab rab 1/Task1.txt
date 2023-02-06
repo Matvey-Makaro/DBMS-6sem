@@ -1,0 +1,45 @@
+SET linesize 1000;
+SET pagesize 200;
+SET wrap off;
+
+set lines 256;
+set trimout on;
+set tab off;
+
+
+set lines 256;
+set trimout on;
+set tab off;
+set pagesize 100;
+set colsep " | ";
+
+
+
+-- переход в старый режим
+alter session set "_ORACLE_SCRIPT"=true; 
+
+create user prod identified by admin; --создаем пользователя prod с паролем admin
+--далее выдаем права       
+grant create session to prod; --создание сессии (чтобы могли приконнектиться к БД)
+grant unlimited tablespace to prod; --создание таблиц с безлимитным табличных простанствах
+grant create table to prod; --создание таблиц
+grant create any index to prod; --создание индексов
+grant create tablespace to prod; --создание табличных пространств
+grant create any sequence to prod; --создание последовательностей
+grant create user to prod; --создание новых пользователей
+grant drop user to prod; --удаление существующих пользователей
+grant insert any table to prod; --добавление данных в таблицы
+grant update any table to prod; --изменения данных в таблицах
+grant delete any table to prod; --удаление данных в таблицах
+grant select on dba_source to prod; --просмотр словаря кода объектов 
+grant select on dba_objects to prod; --просмотр словаря сущесвующих объектов в БД
+grant select on dba_indexes to prod; --просмотр словаря существующих индексов БД
+
+
+
+/*Создание таблицы*/
+CREATE TABLE MyTable(
+id NUMBER NOT NULL,
+val NUMBER,
+CONSTRAINT mytabel_pk PRIMARY KEY(id)
+);
