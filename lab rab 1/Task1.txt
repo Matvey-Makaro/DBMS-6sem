@@ -39,7 +39,9 @@ grant select on dba_indexes to prod; --просмотр словаря суще�
 
 /*Создание таблицы*/
 CREATE TABLE MyTable(
-id NUMBER NOT NULL,
+id NUMBER GENERATED ALWAYS AS IDENTITY
+(START WITH 1 INCREMENT BY 1),
 val NUMBER,
 CONSTRAINT mytabel_pk PRIMARY KEY(id)
 );
+

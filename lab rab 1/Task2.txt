@@ -1,0 +1,6 @@
+DECLARE
+BEGIN
+for i in 1 .. 10000 loop
+INSERT INTO MyTable(val) VALUES (dbms_random.random);
+end loop;
+end;
