@@ -27,6 +27,7 @@ grant create any index to prod; --создание индексов
 grant create tablespace to prod; --создание табличных пространств
 grant create any sequence to prod; --создание последовательностей
 grant create user to prod; --создание новых пользователей
+grant create procedure to prod; -- создание процедур и функций
 grant drop user to prod; --удаление существующих пользователей
 grant insert any table to prod; --добавление данных в таблицы
 grant update any table to prod; --изменения данных в таблицах
