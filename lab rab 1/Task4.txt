@@ -1,0 +1,28 @@
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE FUNCTION generate_insert(id_in_table IN INTEGER) RETURN VARCHAR2
+IS
+result VARCHAR2(100) := 'INSERT INTO MyTable(val) VALUES (';
+value NUMBER;
+incorrect_id EXCEPTION;
+BEGIN
+SELECT val INTO value FROM MyTable WHERE id = id_in_table;
+IF(value IS NULL) THEN
+  RAISE incorrect_id;
+END IF;
+
+result := result || TO_CHAR(value) || ');';
+DBMS_OUTPUT.put_line(result);
+RETURN(result);
+
+EXCEPTION
+WHEN NO_DATA_FOUND THEN
+RETURN 'INCORRECT ID';
+WHEN incorrect_id THEN
+RETURN 'INCORRECT ID';
+END generate_insert;
+
+
+
+/* Для исполнения */
+SELECT generate_insert(10) FROM dual;

@@ -21,15 +21,3 @@ END CMP_EVEN_AND_ODD;
 
 /* Для исполнения */
 SELECT CMP_EVEN_AND_ODD FROM DUAL;
-
-
-
-
-
-DECLARE
-even_num INTEGER := 0;
-odd_num INTEGER := 0;
-BEGIN
-DBMS_OUTPUT.enable;
-DBMS_OUTPUT.put_line('Hello World!!!');
-END;
