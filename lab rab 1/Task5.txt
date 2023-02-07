@@ -1,0 +1,14 @@
+CREATE PROCEDURE insert_val(value IN NUMBER) IS
+BEGIN
+INSERT INTO MyTable(val) VALUES(value);
+END;
+
+CREATE PROCEDURE update_val(id_in_table IN INTEGER, new_val IN NUMBER) IS
+BEGIN
+UPDATE MyTable SET val=new_val WHERE id = id_in_table;
+END;
+
+CREATE PROCEDURE delete_val(id_in_table IN INTEGER) IS
+BEGIN
+DELETE FROM MyTable WHERE id = id_in_table;
+END;
