@@ -1,0 +1,51 @@
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE FUNCTION calc_total_remuneration(monthly_salary IN NUMBER, bonus_percentage IN SIMPLE_INTEGER)
+RETURN NUMBER
+IS
+percent NUMBER;
+months_in_year CONSTANT SIMPLE_INTEGER := 12;
+result NUMBER := 0;
+negative_monthly_salary EXCEPTION;
+null_monthly_salary EXCEPTION;
+negative_bonus_percentage EXCEPTION;
+BEGIN
+IF(monthly_salary < 0) THEN
+  RAISE negative_monthly_salary;
+END IF;
+
+IF(monthly_salary IS NULL) THEN
+  RAISE null_monthly_salary;
+END IF;
+
+IF(bonus_percentage < 0) THEN
+  RAISE negative_bonus_percentage;
+END IF;
+
+percent := bonus_percentage / 100;
+result := (1 + percent) * months_in_year * monthly_salary;
+RETURN(result);
+
+EXCEPTION
+WHEN negative_monthly_salary THEN
+BEGIN
+DBMS_OUTPUT.put_line('Error: negative monthly salary');
+RETURN(0);
+END;
+
+WHEN null_monthly_salary THEN
+BEGIN
+DBMS_OUTPUT.put_line('Error: null monthly salary');
+RETURN(0);
+END;
+
+WHEN negative_bonus_percentage THEN
+BEGIN
+DBMS_OUTPUT.put_line('Error: negative bonus percentage');
+RETURN(0);
+END;
+END calc_total_remuneration;
+
+
+/*Для исполнения*/
+SELECT calc_total_remuneration(0, 0) FROM dual;
