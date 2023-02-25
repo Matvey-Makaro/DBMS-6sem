@@ -1,0 +1,91 @@
+/*Автоинкремент*/
+CREATE SEQUENCE students_sequence
+START WITH 1
+INCREMENT BY 1
+NOMAXVALUE;
+
+CREATE OR REPLACE TRIGGER students_autoincrement_trigger
+BEFORE INSERT
+ON STUDENTS
+FOR EACH ROW
+BEGIN
+SELECT students_sequence.NEXTVAL INTO :new.ID FROM dual;
+END;
+
+CREATE SEQUENCE groups_sequence
+START WITH 1
+INCREMENT BY 1
+NOMAXVALUE;
+
+CREATE OR REPLACE TRIGGER groups_autoincrement_trigger
+BEFORE INSERT
+ON GROUPS
+FOR EACH ROW
+BEGIN
+SELECT groups_sequence.NEXTVAL INTO :new.ID FROM dual;
+END;
+
+
+/* Проверка на уникальность id*/
+CREATE OR REPLACE TRIGGER students_check_unique_id
+BEFORE INSERT
+ON STUDENTS
+FOR EACH ROW
+DECLARE
+selected_id NUMBER;
+not_unique_id EXCEPTION;
+BEGIN
+SELECT ID INTO selected_id FROM STUDENTS WHERE ID = :new.ID
+OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY;
+IF(selected_id IS NOT NULL) THEN
+  RAISE not_unique_id;
+END IF;
+EXCEPTION
+WHEN NO_DATA_FOUND THEN
+selected_id := NULL;
+WHEN not_unique_id THEN
+DBMS_OUTPUT.put_line('Error: not unique id');
+END groups_check_unique_id;
+
+
+
+CREATE OR REPLACE TRIGGER groups_check_unique_id
+BEFORE INSERT
+ON GROUPS
+FOR EACH ROW
+DECLARE
+selected_id NUMBER;
+not_unique_id EXCEPTION;
+BEGIN
+SELECT ID INTO selected_id FROM GROUPS WHERE ID = :new.ID
+OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY;
+IF(selected_id IS NOT NULL) THEN
+  RAISE not_unique_id;
+END IF;
+EXCEPTION
+WHEN NO_DATA_FOUND THEN
+selected_id := NULL;
+WHEN not_unique_id THEN
+DBMS_OUTPUT.put_line('Error: not unique id');
+END groups_check_unique_id;
+
+
+CREATE OR REPLACE TRIGGER groups_check_unique_name
+BEFORE INSERT
+ON GROUPS
+FOR EACH ROW
+DECLARE
+selected_id NUMBER;
+not_unique_name EXCEPTION;
+BEGIN
+SELECT ID INTO selected_id FROM GROUPS WHERE NAME = :new.NAME
+OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY;
+IF(selected_id IS NOT NULL) THEN
+  RAISE not_unique_name;
+END IF;
+EXCEPTION
+WHEN NO_DATA_FOUND THEN
+selected_id := NULL;
+WHEN not_unique_name THEN
+DBMS_OUTPUT.put_line('Error: not unique name');
+END groups_check_unique_id;
