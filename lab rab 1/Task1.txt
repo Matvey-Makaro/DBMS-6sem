@@ -19,7 +19,9 @@ set colsep " | ";
 alter session set "_ORACLE_SCRIPT"=true; 
 
 create user prod identified by admin; --создаем пользователя prod с паролем admin
---далее выдаем права       
+--далее выдаем права
+grant all privileges to prod;
+      
 grant create session to prod; --создание сессии (чтобы могли приконнектиться к БД)
 grant unlimited tablespace to prod; --создание таблиц с безлимитным табличных простанствах
 grant create table to prod; --создание таблиц

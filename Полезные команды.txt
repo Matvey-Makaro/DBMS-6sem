@@ -1,0 +1,10 @@
+DESCRIBE Table;
+
+/*Включить вывод в консоль*/
+SET SERVEROUTPUT ON;
+
+/* Посмотреть ошибки компиляции */
+show errors
+
+/*Отключить триггер*/
+ALTER TRIGGER TESTTRG DISABLE;
