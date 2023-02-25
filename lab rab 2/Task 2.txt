@@ -69,7 +69,7 @@ WHEN not_unique_id THEN
 DBMS_OUTPUT.put_line('Error: not unique id');
 END groups_check_unique_id;
 
-
+/* Проверка на уникальность имени группы*/
 CREATE OR REPLACE TRIGGER groups_check_unique_name
 BEFORE INSERT
 ON GROUPS
