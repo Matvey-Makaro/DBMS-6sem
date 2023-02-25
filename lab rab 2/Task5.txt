@@ -33,6 +33,15 @@ END LOOP;
 DELETE FROM History WHERE data >= desired_date;
 END restore_table_students;
 
+/* Функция которая принимает период*/
+CREATE OR REPLACE PROCEDURE restore_table_students_period(desired_period IN INTERVAL DAY TO SECOND)
+IS
+BEGIN
+restore_table_students(SYSDATE - desired_period);
+END restore_table_students_period;
+
+
+
 /*Включаем обратно нужные функции*/
 ALTER TRIGGER students_autoincrement_trigger ENABLE;
 ALTER TRIGGER students_check_unique_id ENABLE;
@@ -40,8 +49,12 @@ ALTER TRIGGER save_insert_history_trigger ENABLE;
 ALTER TRIGGER save_update_history_trigger ENABLE;
 ALTER TRIGGER save_delete_history_trigger ENABLE;
 
+
+
 /* Исполняем процедуру */
 exec restore_table_students(TO_DATE('25-02-2023 20:48:10', 'DD-MM-YYYY HH24:MI:SS'));
+
+exec restore_table_students_period(INTERVAL '1 4:30:2' DAY TO SECOND);
 
 /* Красиыо вывести историю на экран */
 SELECT history_id, student_id, student_name, student_group_id, operation, TO_CHAR(data,'DD/MM/YYYY, HH24:MI:SS') change_date FROM History;
