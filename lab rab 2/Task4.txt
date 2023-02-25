@@ -9,29 +9,19 @@ data DATE NOT NULL,
 CONSTRAINT history_pk PRIMARY KEY(history_id)
 );
 
-CREATE OR REPLACE TRIGGER save_insert_history_trigger
-AFTER INSERT
+CREATE OR REPLACE TRIGGER save_history_trigger
+AFTER INSERT OR UPDATE OR DELETE
 ON STUDENTS
 FOR EACH ROW
 BEGIN
+IF INSERTING THEN
 INSERT INTO History(student_id, student_name, student_group_id, operation, data) 
 VALUES(:NEW.ID, :NEW.NAME, :NEW.GROUP_ID, 'insert', SYSDATE);
-END save_insert_history_trigger;
-
-CREATE OR REPLACE TRIGGER save_update_history_trigger
-AFTER UPDATE
-ON STUDENTS
-FOR EACH ROW
-BEGIN
+ELSIF UPDATING THEN
 INSERT INTO History(student_id, student_name, student_group_id, operation, data) 
 VALUES(:OLD.ID, :OLD.NAME, :OLD.GROUP_ID, 'update', SYSDATE);
-END save_update_history_trigger;
-
-CREATE OR REPLACE TRIGGER save_delete_history_trigger
-AFTER DELETE
-ON STUDENTS
-FOR EACH ROW
-BEGIN
+ELSIF DELETING THEN
 INSERT INTO History(student_id, student_name, student_group_id, operation, data) 
 VALUES(:OLD.ID, :OLD.NAME, :OLD.GROUP_ID, 'delete', SYSDATE);
-END save_delete_history_trigger;
+END IF;
+END save_history_trigger;
