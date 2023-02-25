@@ -1,0 +1,50 @@
+/* Отключить нужные триггеры*/
+ALTER TRIGGER students_autoincrement_trigger DISABLE;
+ALTER TRIGGER students_check_unique_id DISABLE;
+ALTER TRIGGER save_insert_history_trigger DISABLE;
+ALTER TRIGGER save_update_history_trigger DISABLE;
+ALTER TRIGGER save_delete_history_trigger DISABLE;
+
+
+/* Функция восстановления данных*/
+CREATE OR REPLACE PROCEDURE restore_table_students(desired_date IN DATE)
+IS
+CURSOR get_history(hist_date HISTORY.DATA%TYPE) IS
+SELECT * FROM History
+WHERE data >= hist_date
+ORDER BY history_id DESC;
+BEGIN
+FOR hist in get_history(desired_date) LOOP
+IF(hist.operation = 'insert') THEN
+DELETE FROM STUDENTS WHERE id = hist.student_id;
+END IF;
+
+IF(hist.operation = 'update') THEN
+UPDATE STUDENTS SET ID = hist.student_id, NAME = hist.student_name, GROUP_ID = hist.student_group_id
+WHERE ID = hist.student_id;  
+END IF;
+
+IF(hist.operation = 'delete') THEN
+INSERT INTO STUDENTS(ID, NAME, GROUP_ID) 
+VALUES(hist.student_id, hist.student_name, hist.student_group_id);
+END IF;
+END LOOP;
+
+DELETE FROM History WHERE data >= desired_date;
+END restore_table_students;
+
+/*Включаем обратно нужные функции*/
+ALTER TRIGGER students_autoincrement_trigger ENABLE;
+ALTER TRIGGER students_check_unique_id ENABLE;
+ALTER TRIGGER save_insert_history_trigger ENABLE;
+ALTER TRIGGER save_update_history_trigger ENABLE;
+ALTER TRIGGER save_delete_history_trigger ENABLE;
+
+/* Исполняем процедуру */
+exec restore_table_students(TO_DATE('25-02-2023 20:48:10', 'DD-MM-YYYY HH24:MI:SS'));
+
+/* Красиыо вывести историю на экран */
+SELECT history_id, student_id, student_name, student_group_id, operation, TO_CHAR(data,'DD/MM/YYYY, HH24:MI:SS') change_date FROM History;
+
+/* Привести строку к дате*/
+TO_DATE('25-02-2023 20:26:00', 'DD-MM-YYYY HH24:MI:SS');

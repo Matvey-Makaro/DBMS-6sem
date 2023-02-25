@@ -15,7 +15,7 @@ ON STUDENTS
 FOR EACH ROW
 BEGIN
 INSERT INTO History(student_id, student_name, student_group_id, operation, data) 
-VALUES(:OLD.ID, :OLD.NAME, :OLD.GROUP_ID, 'insert', SYSDATE);
+VALUES(:NEW.ID, :NEW.NAME, :NEW.GROUP_ID, 'insert', SYSDATE);
 END save_insert_history_trigger;
 
 CREATE OR REPLACE TRIGGER save_update_history_trigger

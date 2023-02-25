@@ -8,3 +8,18 @@ show errors
 
 /*Отключить триггер*/
 ALTER TRIGGER TESTTRG DISABLE;
+
+SET linesize 1000;
+SET pagesize 200;
+SET wrap off;
+
+set lines 256;
+set trimout on;
+set tab off;
+
+
+set lines 256;
+set trimout on;
+set tab off;
+set pagesize 100;
+set colsep " | ";
