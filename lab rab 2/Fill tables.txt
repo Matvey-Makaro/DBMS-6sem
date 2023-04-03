@@ -1,9 +1,14 @@
+INSERT INTO GROUPS(name, c_val) VALUES('053502', 30);
+INSERT INTO GROUPS(name, c_val) VALUES('053503', 28);
+INSERT INTO GROUPS(name, c_val) VALUES('053501', 29);
+
 INSERT INTO Students(name, group_id) VALUES('Sasha', 1);
 INSERT INTO Students(name, group_id) VALUES('Maxim', 1);
 INSERT INTO Students(name, group_id) VALUES('Andrey', 1);
 INSERT INTO Students(name, group_id) VALUES('Masha', 1);
 INSERT INTO Students(name, group_id) VALUES('Anton', 1);
 INSERT INTO Students(name, group_id) VALUES('Polina', 1);
+INSERT INTO Students(name, group_id) VALUES('Kirill', 1);
 
 
 UPDATE Students SET group_id = 3 WHERE name='Sasha';

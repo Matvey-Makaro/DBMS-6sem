@@ -87,5 +87,8 @@ EXCEPTION
 WHEN NO_DATA_FOUND THEN
 selected_id := NULL;
 WHEN not_unique_name THEN
+BEGIN
 DBMS_OUTPUT.put_line('Error: not unique name');
+raise not_unique_name;
+END;
 END groups_check_unique_id;
