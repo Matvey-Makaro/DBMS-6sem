@@ -1,0 +1,14 @@
+-- переход в старый режим
+alter session set "_ORACLE_SCRIPT"=true; 
+
+create user prod identified by admin; --создаем пользователя prod с паролем admin
+--далее выдаем права
+grant all privileges to prod;
+
+/*Создание таблицы*/
+CREATE TABLE MyTable(
+id NUMBER GENERATED ALWAYS AS IDENTITY
+(START WITH 1 INCREMENT BY 1),
+val NUMBER,
+CONSTRAINT mytabel_pk PRIMARY KEY(id)
+);

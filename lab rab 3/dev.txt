@@ -1,0 +1,29 @@
+-- переход в старый режим
+alter session set "_ORACLE_SCRIPT"=true; 
+
+create user dev identified by dev;
+--далее выдаем права
+grant all privileges to dev;
+
+/*Создание таблицы*/
+CREATE TABLE MyTable(
+id NUMBER GENERATED ALWAYS AS IDENTITY
+(START WITH 1 INCREMENT BY 1),
+val NUMBER,
+CONSTRAINT mytabel_pk PRIMARY KEY(id)
+);
+
+CREATE TABLE MyDevTable(
+id NUMBER GENERATED ALWAYS AS IDENTITY
+(START WITH 1 INCREMENT BY 1),
+val NUMBER,
+my_table_id NUMBER,
+CONSTRAINT mydevtabel_pk PRIMARY KEY(id),
+CONSTRAINT fk_my_table FOREIGN KEY (my_table_id)
+REFERENCES MyTable(id)
+);
+
+-- Создание закольцованных foreign keys.
+ALTER TABLE MyTable ADD my_dev_table_id NUMBER;
+ALTER TABLE MyTable ADD CONSTRAINT fk_my_dev_table FOREIGN KEY (my_dev_table_id )
+REFERENCES MyDevTable(id);
