@@ -1,6 +1,6 @@
 SELECT TABLE_NAME, OWNER FROM DBA_TABLES WHERE OWNER = 'PROD' or OWNER = 'DEV';
 
-SELECT TABLE_NAME, OWNER, COLUMN_NAME, DATA_TYPE FROM ALL_TAB_COLUMNS WHERE OWNER = 'PROD' or OWNER = 'DEV';
+SELECT TABLE_NAME, OWNER, COLUMN_NAME, DATA_TYPE, DATA_DEFAULT FROM ALL_TAB_COLUMNS WHERE OWNER = 'PROD' or OWNER = 'DEV';
 
 SELECT OBJECT_NAME, OWNER, OBJECT_TYPE, CREATED FROM ALL_OBJECTS WHERE OWNER = 'PROD' or OWNER = 'DEV';
 
@@ -28,6 +28,64 @@ END is_table_exists;
 
 SELECT is_table_exists('DEV', 'MYDEVTABLE') FROM dual;
 
+
+CREATE OR REPLACE FUNCTION get_inline_constraint_description(schema_name IN VARCHAR2, tab_name IN VARCHAR2, col_name IN VARCHAR2) RETURN VARCHAR2
+IS
+CURSOR cur_get_inl_constraint IS
+SELECT * FROM
+((SELECT CONSTRAINT_NAME FROM ALL_CONS_COLUMNS
+WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name) AND COLUMN_NAME = UPPER(col_name)) left
+INNER JOIN
+(SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE, SEARCH_CONDITION FROM DBA_CONSTRAINTS
+WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name) AND GENERATED = 'GENERATED NAME') right
+ON left.CONSTRAINT_NAME = right.CONSTRAINT_NAME);
+BEGIN
+END get_inline_constraint_description;
+
+
+CREATE OR REPLACE FUNCTION get_col_description(schema_name IN VARCHAR2, tab_name IN VARCHAR2, col_name IN VARCHAR2) RETURN VARCHAR2
+IS
+CURSOR cur_get_col IS
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_DEFAULT
+FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name) AND COLUMN_NAME = UPPER(col_name);
+col_descriptioin VARCHAR2(500) := '';
+BEGIN
+
+for rec IN cur_get_col LOOP
+    col_descriptioin := rec.COLUMN_NAME || ' ' || rec.DATA_TYPE;
+
+    IF rec.NULLABLE = 'N' THEN
+        col_descriptioin := col_descriptioin || ' NOT NULL';
+        -- TODO: Продолжить
+    END IF;
+END LOOP;
+
+END get_col_description;
+
+
+CREATE OR REPLACE PROCEDURE cmp_table_structure(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2, tab_name IN VARCHAR2)
+IS
+CURSOR cur_get_columns IS
+SELECT * FROM
+((SELECT COLUMN_NAME dev_col_name FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER(dev_schema_name) AND TABLE_NAME = UPPER(tab_name)) dev
+FULL OUTER JOIN
+(SELECT COLUMN_NAME prod_col_name FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER(prod_schema_name) AND TABLE_NAME = UPPER(tab_name)) prod 
+ON dev.dev_col_name = prod.prod_col_name);
+BEGIN
+FOR rec IN cur_get_columns LOOP
+    IF rec.dev_col_name IS NULL THEN
+        DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || tab_name || ' DROP COLUMN ' || rec.prod_col_name || ';');
+    ELSIF rec.prod_col_name IS NULL THEN
+        DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || tab_name || 'ADD COLUMN ' || rec.dev_col_name || ';') -- TODO: Добавить получение определение колонки
+    END IF;
+END LOOP;
+
+END cmp_table_structure;
+
+
 CREATE OR REPLACE PROCEDURE cmp_schemes(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
 IS
     CURSOR get_table_name IS
@@ -47,3 +105,18 @@ BEGIN
 END cmp_schemes;
 
 exec cmp_schemes('DEV', 'PROD');
+
+
+SELECT * FROM ((SELECT TABLE_NAME dev_col_name FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER('DEV') AND TABLE_NAME = UPPER('MYTABLE')) dev
+FULL OUTER JOIN
+(SELECT TABLE_NAME prod_col_name FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER('PROD') AND TABLE_NAME = UPPER('MYTABLE')) prod 
+ON dev.dev_col_name = prod.prod_col_name);
+
+SELECT * FROM ((SELECT COLUMN_NAME dev_col_name FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER('DEV') AND TABLE_NAME = UPPER('MYTABLE')) dev
+FULL OUTER JOIN
+(SELECT COLUMN_NAME prod_col_name FROM ALL_TAB_COLUMNS
+WHERE OWNER = UPPER('PROD') AND TABLE_NAME = UPPER('MYTABLE')) prod 
+ON dev.dev_col_name = prod.prod_col_name);
