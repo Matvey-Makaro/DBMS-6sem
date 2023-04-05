@@ -6,8 +6,7 @@ SELECT OBJECT_NAME, OWNER, OBJECT_TYPE, CREATED FROM ALL_OBJECTS WHERE OWNER = '
 
 SELECT OWNER, CONSTRAINT_NAME, CONSTRAINT_TYPE, R_OWNER, R_CONSTRAINT_NAME, TABLE_NAME FROM ALL_CONSTRAINTS WHERE OWNER = 'DEV';
 
-EXECUTE IMMEDIATE 'SELECT TABLE_NAME FROM DBA_TABLES WHERE OWNER = ''DEV'' AND TABLE_NAME NOT IN (
-SELECT TABLE_NAME FROM DBA_TABLES WHERE OWNER = ''PROD'')';
+SELECT SEQUENCE_NAME, MIN_VALUE, MAX_VALUE, INCREMENT_BY FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = 'DEV';
 
 CREATE OR REPLACE FUNCTION is_table_exists(schema_name IN VARCHAR2, tab_name IN VARCHAR2) RETURN BOOLEAN
 IS
@@ -39,8 +38,59 @@ INNER JOIN
 (SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE, SEARCH_CONDITION FROM DBA_CONSTRAINTS
 WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name) AND GENERATED = 'GENERATED NAME') right
 ON left.CONSTRAINT_NAME = right.CONSTRAINT_NAME);
+constr_description VARCHAR2(300);
 BEGIN
+    FOR rec IN  cur_get_inl_constraint LOOP
+        CASE rec.CONSTRAINT_TYPE
+            WHEN 'P' THEN constr_description := constr_description || ' PRIMARY KEY';
+            WHEN 'U' THEN constr_description := constr_description ||' UNIQUE';
+            WHEN 'C' THEN
+                IF rec.SEARCH_CONDITION NOT LIKE '% IS NOT NULL' THEN
+                    constr_description := constr_description || ' CHECK(' || rec.SEARCH_CONDITION || ')';
+                END IF;
+            ELSE NULL;
+        END CASE;
+    END LOOP;
+RETURN constr_description;
 END get_inline_constraint_description;
+
+
+CREATE OR REPLACE FUNCTION get_sequence_description(schema_name IN VARCHAR2, seq_name IN VARCHAR2) RETURN VARCHAR2
+IS
+min_val NUMBER;
+max_val NUMBER;
+inc_by NUMBER;
+gen_type VARCHAR2(10);
+seq_description VARCHAR2(300);
+BEGIN
+    SELECT MIN_VALUE, MAX_VALUE, INCREMENT_BY INTO min_val, max_val, inc_by FROM ALL_SEQUENCES WHERE SEQUENCE_NAME = seq_name AND SEQUENCE_OWNER = UPPER(schema_name);
+    SELECT GENERATION_TYPE INTO gen_type FROM ALL_TAB_IDENTITY_COLS WHERE SEQUENCE_NAME = seq_name AND OWNER = UPPER(schema_name);
+    -- It makes no difference how to do this or the following.
+    -- seq_description := 'GENERATED ' || gen_type || ' AS IDENTITY' || ' START WITH ' || min_val || ' INCREMENT BY ' || inc_by || ' MAXVALUE ' || max_val;
+
+    seq_description := 'GENERATED ' || gen_type || ' AS IDENTITY';
+    IF min_val != 1 THEN
+        seq_description := seq_description || ' START WITH ' || min_val;
+    END IF;
+    IF inc_by != 1 THEN
+        seq_description := seq_description || ' INCREMENT BY ' || inc_by;
+    END IF;
+    IF max_val != 999999999999999999999999999 THEN
+        seq_description := seq_description || ' MAXVALUE ' || max_val;
+    END IF;
+    RETURN seq_description;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        BEGIN
+            DBMS_OUTPUT.PUT_LINE('NO_DATA_FOUND in get_sequence_description()');
+            RETURN NULL;
+        END;
+    WHEN OTHERS THEN
+        BEGIN
+            DBMS_OUTPUT.PUT_LINE('Unknown error in get_sequence_description()');
+            RETURN NULL;    
+        END;
+END get_sequence_description;
 
 
 CREATE OR REPLACE FUNCTION get_col_description(schema_name IN VARCHAR2, tab_name IN VARCHAR2, col_name IN VARCHAR2) RETURN VARCHAR2
@@ -49,18 +99,29 @@ CURSOR cur_get_col IS
 SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_DEFAULT
 FROM ALL_TAB_COLUMNS
 WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name) AND COLUMN_NAME = UPPER(col_name);
-col_descriptioin VARCHAR2(500) := '';
+col_description VARCHAR2(500) := '';
 BEGIN
 
-for rec IN cur_get_col LOOP
-    col_descriptioin := rec.COLUMN_NAME || ' ' || rec.DATA_TYPE;
+FOR rec IN cur_get_col LOOP
+    col_description := rec.COLUMN_NAME || ' ' || rec.DATA_TYPE;
 
     IF rec.NULLABLE = 'N' THEN
-        col_descriptioin := col_descriptioin || ' NOT NULL';
-        -- TODO: Продолжить
+        col_description := col_description || ' NOT NULL';
+    END IF;
+    
+    col_description := col_description || get_inline_constraint_description(schema_name, tab_name, col_name);
+
+    IF rec.DATA_DEFAULT IS NOT NULL THEN
+        BEGIN
+            IF rec.DATA_DEFAULT LIKE '%.nextval' THEN
+                col_description -- TODO: дообавить sequence
+            ELSE
+                col_description := col_description || ' DEFAULT ' || rec.DATA_DEFAULT;
+            END IF
+        END;
     END IF;
 END LOOP;
-
+RETURN col_description;
 END get_col_description;
 
 

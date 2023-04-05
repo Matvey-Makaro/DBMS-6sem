@@ -27,3 +27,4 @@ REFERENCES MyTable(id)
 ALTER TABLE MyTable ADD my_dev_table_id NUMBER;
 ALTER TABLE MyTable ADD CONSTRAINT fk_my_dev_table FOREIGN KEY (my_dev_table_id )
 REFERENCES MyDevTable(id);
+ALTER TABLE MyDevTable MODIFY val NUMBER DEFAULT 10;
