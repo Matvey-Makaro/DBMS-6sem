@@ -361,12 +361,14 @@ EXCEPTION
 END get_not_fk_constraint_desription;
 
 
+SELECT get_outline_constraints_description('DEV', 'TMP') FROM dual;
+
 CREATE OR REPLACE FUNCTION get_outline_constraints_description(schema_name IN VARCHAR2, tab_name IN VARCHAR2) RETURN VARCHAR2
 IS
     CURSOR cur_get_constraints IS
-    SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE, FROM ALL_CONSTRAINTS
+    SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE FROM ALL_CONSTRAINTS
     WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name) AND GENERATED != 'GENERATED NAME';
-    buff VARCHAR2(5000) := '';
+    buff VARCHAR2(5000);
 BEGIN
     FOR rec in cur_get_constraints LOOP
         IF rec.CONSTRAINT_TYPE = 'R' THEN
@@ -379,33 +381,28 @@ BEGIN
     RETURN buff;
 END get_outline_constraints_description;
 
+exec create_table('DEV', 'TMP');
 
 CREATE OR REPLACE PROCEDURE create_table(schema_name IN VARCHAR2, tab_name IN VARCHAR2)
 IS
     CURSOR cur_get_col IS
     SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS
     WHERE OWNER = UPPER(schema_name) AND TABLE_NAME = UPPER(tab_name);
-    rec cur_get_col%ROWTYPE;
-    buff VARCHAR2(300) := '';
+    buff VARCHAR2(5000);
+    outline_constr_buff VARCHAR2(3000);
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('CREATE TABLE ' || tab_name || ' (');
-    OPEN cur_get_col;
-    FETCH cur_get_col INTO rec;
-    LOOP
-        buff := get_col_description(schema_name, tab_name, rec.COLUMN_NAME);
-        
-        FETCH cur_get_col INTO rec;
-        IF cur_get_col%NOTFOUND THEN
-            DBMS_OUTPUT.PUT_LINE(buff);
-            EXIT;
-        ELSE
-            DBMS_OUTPUT.PUT_LINE(buff || ',');
-            buff := '';
-        END IF;
+    buff := 'CREATE TABLE ' || tab_name || ' (' || CHR(10);
+    FOR rec in cur_get_col LOOP
+        buff := buff || get_col_description(schema_name, tab_name, rec.COLUMN_NAME) || ',' || CHR(10);
     END LOOP;
-    CLOSE cur_get_col;
-
-
+    outline_constr_buff := get_outline_constraints_description(schema_name, tab_name);
+    IF outline_constr_buff IS NULL THEN
+        buff := RTRIM(buff, ',' || CHR(10));
+    ELSE
+        buff := buff || outline_constr_buff;
+    END IF;
+    buff := buff || ');';
+    DBMS_OUTPUT.PUT_LINE(buff);
 END create_table;
 
 
