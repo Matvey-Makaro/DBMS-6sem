@@ -250,9 +250,9 @@ BEGIN
     END LOOP;
 EXCEPTION
     WHEN NO_DATA_FOUND THEN
-            DBMS_OUTPUT.PUT_LINE('NO_DATA_FOUND in fill_tables_to_create()');
+            DBMS_OUTPUT.PUT_LINE('NO_DATA_FOUND in update_tables_to_create()');
     WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('Unknown error in fill_tables_to_create()');
+            DBMS_OUTPUT.PUT_LINE('Unknown error in update_tables_to_create()');
 END update_tables_to_create;
 
 
@@ -361,9 +361,34 @@ EXCEPTION
 END get_not_fk_constraint_desription;
 
 
+CREATE OR REPLACE FUNCTION get_outline_constraint(schema_name IN VARCHAR2, constr_name IN VARCHAR2) RETURN VARCHAR2
+IS
+constr_type VARCHAR2(1);
+BEGIN
+
+    SELECT CONSTRAINT_TYPE INTO constr_type FROM ALL_CONSTRAINTS
+    WHERE OWNER = UPPER(schema_name) AND CONSTRAINT_NAME = UPPER(constr_name)
+    FETCH FIRST 1 ROWS ONLY;
+
+    IF constr_type = 'R' THEN
+        RETURN get_fk_description(schema_name, constr_name);
+    ELSE
+        RETURN get_not_fk_constraint_desription(schema_name, constr_name);
+    END IF;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('NO_DATA_FOUND in get_outline_constraint()');
+            RETURN NULL;
+    WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Unknown error in get_outline_constraint()');
+            RETURN NULL;
+END get_outline_constraint;
+
+
 SELECT get_outline_constraints_description('DEV', 'TMP') FROM dual;
 
-CREATE OR REPLACE FUNCTION get_outline_constraints_description(schema_name IN VARCHAR2, tab_name IN VARCHAR2) RETURN VARCHAR2
+CREATE OR REPLACE FUNCTION get_outline_constraints_description(schema_name IN VARCHAR2, tab_name IN VARCHAR2, is_create_fk_constr IN NUMBER) RETURN VARCHAR2
 IS
     CURSOR cur_get_constraints IS
     SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE FROM ALL_CONSTRAINTS
@@ -372,7 +397,9 @@ IS
 BEGIN
     FOR rec in cur_get_constraints LOOP
         IF rec.CONSTRAINT_TYPE = 'R' THEN
-            buff := buff || get_fk_description(schema_name, rec.CONSTRAINT_NAME) || ',' || CHR(10);
+            IF is_create_fk_constr = 1 THEN
+                buff := buff || get_fk_description(schema_name, rec.CONSTRAINT_NAME) || ',' || CHR(10);
+            END IF;
         ELSE
             buff := buff || get_not_fk_constraint_desription(schema_name, rec.CONSTRAINT_NAME) || ',' || CHR(10);
         END IF;
@@ -381,9 +408,10 @@ BEGIN
     RETURN buff;
 END get_outline_constraints_description;
 
+
 exec create_table('DEV', 'TMP');
 
-CREATE OR REPLACE PROCEDURE create_table(schema_name IN VARCHAR2, tab_name IN VARCHAR2)
+CREATE OR REPLACE PROCEDURE create_table(schema_name IN VARCHAR2, tab_name IN VARCHAR2, is_create_fk_constr IN NUMBER)
 IS
     CURSOR cur_get_col IS
     SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS
@@ -395,7 +423,7 @@ BEGIN
     FOR rec in cur_get_col LOOP
         buff := buff || get_col_description(schema_name, tab_name, rec.COLUMN_NAME) || ',' || CHR(10);
     END LOOP;
-    outline_constr_buff := get_outline_constraints_description(schema_name, tab_name);
+    outline_constr_buff := get_outline_constraints_description(schema_name, tab_name, is_create_fk_constr);
     IF outline_constr_buff IS NULL THEN
         buff := RTRIM(buff, ',' || CHR(10));
     ELSE
@@ -408,30 +436,84 @@ END create_table;
 
 CREATE OR REPLACE PROCEDURE create_all_tables(schema_name IN VARCHAR2)
 IS
+is_create_fk_constr NUMBER;
 BEGIN
-    update_tables_to_create(dev_schema_name);
+    update_tables_to_create(schema_name);
+
+    FOR rec in (SELECT * FROM TABLES_TO_CREATE ORDER BY lvl) LOOP
+        IF rec.is_cycle = 1 THEN
+            is_create_fk_constr := 0;
+        ELSE
+            is_create_fk_constr := 1;
+        END IF;
+        create_table(schema_name, rec.table_name, is_create_fk_constr);
+    END LOOP;
+
+
+    FOR rec in (SELECT * FROM TABLES_TO_CREATE WHERE is_cycle = 1) LOOP
+        DBMS_OUTPUT.PUT_LINE('Cycle: ' || rec.path);
+        DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || rec.table_name || ' ADD' ||  CHR(10) || get_fk_description(schema_name, rec.fk_name) || ';');
+    END LOOP;
 END create_all_tables;
+
+
+CREATE OR REPLACE PROCEDURE cmp_outline_constraints(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2, tab_name IN VARCHAR2)
+IS
+    CURSOR cur_get_constr_name IS
+    SELECT * FROM
+    ((SELECT CONSTRAINT_NAME dev_constr_name FROM ALL_CONSTRAINTS
+    WHERE OWNER = UPPER(dev_schema_name) AND TABLE_NAME = UPPER(tab_name) AND GENERATED != 'GENERATED NAME') dev
+    FULL OUTER JOIN
+    (SELECT CONSTRAINT_NAME prod_constr_name FROM ALL_CONSTRAINTS
+    WHERE OWNER = UPPER(prod_schema_name) AND TABLE_NAME = UPPER(tab_name) AND GENERATED != 'GENERATED NAME') prod
+    ON dev.dev_constr_name = prod.prod_constr_name);
+BEGIN
+    FOR rec in cur_get_constr_name LOOP
+        IF rec.dev_constr_name IS NULL THEN
+            DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || UPPER(tab_name) || ' DROP CONSTRAINT ' || rec.prod_constr_name || ';');
+        ELSIF rec.prod_constr_name IS NULL THEN
+            DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || UPPER(tab_name) || ' ADD ' || get_outline_constraint(dev_schema_name, rec.dev_constr_name) || ';');
+        ELSE
+            IF get_outline_constraint(dev_schema_name, rec.dev_constr_name) != get_outline_constraint(prod_schema_name, rec.prod_constr_name) THEN
+                DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || UPPER(tab_name) || ' DROP CONSTRAINT ' || rec.prod_constr_name || ';');
+                DBMS_OUTPUT.PUT_LINE('ALTER TABLE ' || UPPER(tab_name) || ' ADD ' || get_outline_constraint(dev_schema_name, rec.dev_constr_name) || ';');
+            END IF;
+        END IF;
+    END LOOP;
+END cmp_outline_constraints;
+
+
+CREATE OR REPLACE PROCEDURE cmp_tables(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
+IS
+    CURSOR get_table_name IS
+    SELECT * FROM
+        ((SELECT TABLE_NAME dev_name FROM DBA_TABLES
+        WHERE OWNER = UPPER(dev_schema_name)) dev
+        FULL OUTER JOIN
+        (SELECT TABLE_NAME prod_name FROM DBA_TABLES
+        WHERE OWNER = UPPER(prod_schema_name)) prod
+        ON dev.dev_name = prod.prod_name);
+
+BEGIN
+    FOR rec IN get_table_name LOOP
+        IF rec.dev_name IS NULL THEN
+            DBMS_OUTPUT.PUT_LINE('DROP TABLE ' || rec.prod_name || ';');
+        ELSIF rec.prod_name IS NULL THEN
+            INSERT INTO TABLES_TO_CREATE(owner, table_name) VALUES(dev_schema_name, rec.dev_name);
+        ELSE
+            cmp_table_structure(dev_schema_name, prod_schema_name, rec.dev_name);
+            cmp_outline_constraints(dev_schema_name, prod_schema_name, rec.dev_name);
+        END IF;
+    END LOOP;
+    create_all_tables(dev_schema_name);
+END cmp_tables;
 
 
 CREATE OR REPLACE PROCEDURE cmp_schemes(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
 IS
-    CURSOR get_table_name IS
-    SELECT TABLE_NAME FROM DBA_TABLES
-    WHERE OWNER = UPPER(dev_schema_name);
-    --TYPE varchar2_arr IS TABLE OF DBA_TABLES.TABLE_NAME%TYPE;
-    --varchar2_arr names_to_add := varchar2_arr();
 BEGIN
-    FOR table_name IN get_table_name LOOP
-        IF NOT is_table_exists(prod_schema_name, table_name.TABLE_NAME) THEN
-            DBMS_OUTPUT.PUT_LINE('Add table ' || table_name.TABLE_NAME);
-            INSERT INTO TABLES_TO_CREATE(owner, table_name) 
-            VALUES(dev_schema_name, table_name.TABLE_NAME);
-        ELSE
-            cmp_table_structure(dev_schema_name, prod_schema_name, table_name.TABLE_NAME);
-        END IF;
-    END LOOP;
-    create_all_tables(dev_schema_name);
-     --EXECUTE IMMEDIATE 'TRUNCATE TABLE tables_to_create'; 
+    cmp_tables(dev_schema_name, prod_schema_name);
+    EXECUTE IMMEDIATE 'TRUNCATE TABLE tables_to_create'; 
 END cmp_schemes;
 
 exec cmp_schemes('DEV', 'PROD');
