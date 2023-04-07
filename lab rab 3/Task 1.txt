@@ -529,7 +529,6 @@ BEGIN
     IF check_var IS NULL THEN
         RETURN;
     END IF;
-    DBMS_OUTPUT.PUT_LINE('Check var: ' || check_var);
     DBMS_OUTPUT.PUT_LINE('CREATE OR REPLACE ');
     FOR rec IN get_object
     LOOP
@@ -569,7 +568,6 @@ CURSOR cur_get_call IS
     ON dev.dev_name = prod.prod_name;
 BEGIN
     FOR rec IN cur_get_call LOOP
-        DBMS_OUTPUT.PUT_LINE('DEV name: ' || rec.dev_name ||' PROD NAME: ' || rec.prod_name);
         IF rec.dev_name IS NULL THEN
             DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || ' ' || UPPER(rec.prod_name) || ';');
         ELSIF rec.prod_name IS NULL THEN
@@ -582,10 +580,25 @@ BEGIN
 END cmp_callables;
 
 
+CREATE OR REPLACE PROCEDURE cmp_functions(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
+IS
+BEGIN
+    cmp_callables(dev_schema_name, prod_schema_name, 'FUNCTION');
+END cmp_functions;
+
+CREATE OR REPLACE PROCEDURE cmp_procedures(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
+IS
+BEGIN
+    cmp_callables(dev_schema_name, prod_schema_name, 'PROCEDURE');
+END cmp_procedures;
+
+
 CREATE OR REPLACE PROCEDURE cmp_schemes(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
 IS
 BEGIN
     cmp_tables(dev_schema_name, prod_schema_name);
+    cmp_functions(dev_schema_name, prod_schema_name);
+    cmp_procedures(dev_schema_name, prod_schema_name);
     EXECUTE IMMEDIATE 'TRUNCATE TABLE tables_to_create'; 
 END cmp_schemes;
 
