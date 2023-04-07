@@ -508,27 +508,75 @@ BEGIN
     create_all_tables(dev_schema_name);
 END cmp_tables;
 
+    SELECT TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' '))) AS obj_text
+    FROM all_source
+    WHERE owner = UPPER('DEV') 
+    AND name = UPPER('SIMPLE_FUNCT') AND type = UPPER('FUNCTION');
+
+
+CREATE OR REPLACE PROCEDURE add_object(dev_schema_name VARCHAR2, object_type VARCHAR2, object_name VARCHAR2)
+IS
+CURSOR get_object IS
+    SELECT TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' '))) AS obj_text
+    FROM all_source
+    WHERE owner = UPPER(dev_schema_name) 
+    AND name = UPPER(object_name) AND type = UPPER(object_type); 
+check_var VARCHAR2(1000);
+BEGIN
+    OPEN get_object;
+    FETCH get_object INTO check_var;
+    CLOSE get_object;
+    IF check_var IS NULL THEN
+        RETURN;
+    END IF;
+    DBMS_OUTPUT.PUT_LINE('Check var: ' || check_var);
+    DBMS_OUTPUT.PUT_LINE('CREATE OR REPLACE ');
+    FOR rec IN get_object
+    LOOP
+        DBMS_OUTPUT.PUT_LINE(rec.obj_text);
+    END LOOP;
+END add_object;
+
+
+CREATE OR REPLACE FUNCTION get_callable_text(schema_name IN VARCHAR2, obj_type IN VARCHAR2, obj_name IN VARCHAR2) RETURN VARCHAR2
+IS
+    CURSOR cur_get_text IS
+        SELECT UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) obj_text 
+        FROM ALL_SOURCE
+        WHERE OWNER = UPPER(schema_name) AND NAME = UPPER(obj_name)
+        AND TYPE = UPPER(obj_type) AND TEXT != chr(10);
+
+    call_text VARCHAR2(32000) := '';
+BEGIN
+      FOR rec in cur_get_text LOOP
+        call_text := call_text || rec.obj_text;
+      END LOOP;  
+      RETURN call_text;
+END get_callable_text;
+
+
 exec cmp_callables('DEV', 'PROD', 'FUNCTION');
 
 CREATE OR REPLACE PROCEDURE cmp_callables(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2, obj_type IN VARCHAR2)
 IS
 CURSOR cur_get_call IS
     SELECT * FROM
-    (SELECT DISTINCT NAME dev_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) dev_text
-    FROM ALL_SOURCE WHERE OWNER = UPPER(dev_schema_name) AND TYPE = UPPER(obj_type) AND TEXT != chr(10)) dev
+    (SELECT DISTINCT NAME dev_name
+    FROM ALL_SOURCE WHERE OWNER = UPPER(dev_schema_name) AND TYPE = UPPER(obj_type)) dev
     FULL JOIN 
-    (SELECT DISTINCT NAME prod_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) prod_text
-    FROM ALL_SOURCE WHERE OWNER = UPPER(prod_schema_name) AND TYPE = UPPER(obj_type) AND TEXT != chr(10)) prod
+    (SELECT DISTINCT NAME prod_name
+    FROM ALL_SOURCE WHERE OWNER = UPPER(prod_schema_name) AND TYPE = UPPER(obj_type)) prod
     ON dev.dev_name = prod.prod_name;
 BEGIN
     FOR rec IN cur_get_call LOOP
+        DBMS_OUTPUT.PUT_LINE('DEV name: ' || rec.dev_name ||' PROD NAME: ' || rec.prod_name);
         IF rec.dev_name IS NULL THEN
             DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || ' ' || UPPER(rec.prod_name) || ';');
         ELSIF rec.prod_name IS NULL THEN
-            DBMS_OUTPUT.PUT_LINE(rec.dev_text);
-        ELSIF rec.dev_text != rec.prod_text THEN
+            add_object(dev_schema_name, obj_type, rec.dev_name);
+        ELSIF get_callable_text(dev_schema_name, obj_type, rec.dev_name) != get_callable_text(prod_schema_name, obj_type, rec.prod_name) THEN
             DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || UPPER(rec.prod_name) || ';');
-            DBMS_OUTPUT.PUT_LINE(rec.dev_text);
+            add_object(dev_schema_name, obj_type, rec.dev_name);
         END IF;
     END LOOP;
 END cmp_callables;
