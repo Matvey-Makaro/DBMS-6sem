@@ -694,10 +694,8 @@ CURSOR get_package_names IS
         WHERE owner = UPPER(prod_schema_name) AND object_type = 'PACKAGE') prod
     ON dev.dev_name = prod.prod_name;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('cmp_packages start');
     FOR rec IN get_package_names
     LOOP
-    DBMS_OUTPUT.PUT_LINE('Dev name: ' || rec.dev_name || 'Prod name: ' || rec.prod_name);
         IF rec.prod_name IS NULL THEN
             add_object(dev_schema_name, 'PACKAGE', rec.dev_name);
             add_object(dev_schema_name, 'PACKAGE BODY', rec.dev_name);
