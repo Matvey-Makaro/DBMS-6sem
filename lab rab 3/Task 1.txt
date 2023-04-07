@@ -508,6 +508,31 @@ BEGIN
     create_all_tables(dev_schema_name);
 END cmp_tables;
 
+exec cmp_callables('DEV', 'PROD', 'FUNCTION');
+
+CREATE OR REPLACE PROCEDURE cmp_callables(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2, obj_type IN VARCHAR2)
+IS
+CURSOR cur_get_call IS
+    SELECT * FROM
+    (SELECT DISTINCT NAME dev_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) dev_text
+    FROM ALL_SOURCE WHERE OWNER = UPPER(dev_schema_name) AND TYPE = UPPER(obj_type) AND TEXT != chr(10)) dev
+    FULL JOIN 
+    (SELECT DISTINCT NAME prod_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) prod_text
+    FROM ALL_SOURCE WHERE OWNER = UPPER(prod_schema_name) AND TYPE = UPPER(obj_type) AND TEXT != chr(10)) prod
+    ON dev.dev_name = prod.prod_name;
+BEGIN
+    FOR rec IN cur_get_call LOOP
+        IF rec.dev_name IS NULL THEN
+            DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || ' ' || UPPER(rec.prod_name) || ';');
+        ELSIF rec.prod_name IS NULL THEN
+            DBMS_OUTPUT.PUT_LINE(rec.dev_text);
+        ELSIF rec.dev_text != rec.prod_text THEN
+            DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || UPPER(rec.prod_name) || ';');
+            DBMS_OUTPUT.PUT_LINE(rec.dev_text);
+        END IF;
+    END LOOP;
+END cmp_callables;
+
 
 CREATE OR REPLACE PROCEDURE cmp_schemes(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
 IS
@@ -519,22 +544,13 @@ END cmp_schemes;
 exec cmp_schemes('DEV', 'PROD');
 
 
-SELECT * FROM ((SELECT TABLE_NAME dev_col_name FROM ALL_TAB_COLUMNS
-WHERE OWNER = UPPER('DEV') AND TABLE_NAME = UPPER('MYTABLE')) dev
-FULL OUTER JOIN
-(SELECT TABLE_NAME prod_col_name FROM ALL_TAB_COLUMNS
-WHERE OWNER = UPPER('PROD') AND TABLE_NAME = UPPER('MYTABLE')) prod 
-ON dev.dev_col_name = prod.prod_col_name);
-
-SELECT * FROM ((SELECT COLUMN_NAME dev_col_name FROM ALL_TAB_COLUMNS
-WHERE OWNER = UPPER('DEV') AND TABLE_NAME = UPPER('MYTABLE')) dev
-FULL OUTER JOIN
-(SELECT COLUMN_NAME prod_col_name FROM ALL_TAB_COLUMNS
-WHERE OWNER = UPPER('PROD') AND TABLE_NAME = UPPER('MYTABLE')) prod 
-ON dev.dev_col_name = prod.prod_col_name);
-
-
-
+SELECT * FROM
+    (SELECT NAME dev_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) dev_text
+    FROM ALL_SOURCE WHERE OWNER = UPPER('DEV') AND TYPE = UPPER('FUNCTION')) dev
+    FULL OUTER JOIN 
+    (SELECT NAME prod_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) prod_text
+    FROM ALL_SOURCE WHERE OWNER = UPPER('PROD') AND TYPE = UPPER('FUNCTION')) prod
+    ON dev.dev_name = prod.prod_name;
 -- test
 
 
