@@ -53,3 +53,5 @@ IS
 BEGIN
     RETURN num;
 END ret_num;
+
+CREATE INDEX tmp_val_ind ON TMP(tmp_val);

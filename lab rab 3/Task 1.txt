@@ -593,17 +593,104 @@ BEGIN
 END cmp_procedures;
 
 
+CREATE OR REPLACE FUNCTION get_index_string(schema_name VARCHAR2, ind_name VARCHAR2) RETURN VARCHAR2
+IS
+CURSOR get_index IS
+    SELECT all_ind_col.index_name, all_ind_col.table_name, 
+            all_ind_col.column_name, all_ind_col.column_position, all_ind.uniqueness 
+    FROM all_ind_columns all_ind_col
+    INNER JOIN all_indexes all_ind
+    ON all_ind.index_name = all_ind_col.index_name AND all_ind.owner = all_ind_col.index_owner
+    WHERE all_ind_col.index_owner = UPPER(schema_name) 
+    AND all_ind_col.index_name = UPPER(ind_name)
+    ORDER BY all_ind_col.column_position;
+    
+index_rec get_index%ROWTYPE;
+index_string VARCHAR2(200);
+BEGIN
+    OPEN get_index;
+    FETCH get_index INTO index_rec;
+    index_string := index_string || ' ' || index_rec.table_name || '(';
+    WHILE get_index%FOUND 
+    LOOP
+        index_string := index_string || index_rec.column_name || ', ';
+        FETCH get_index INTO index_rec;
+    END LOOP;
+    CLOSE get_index;
+    index_string := RTRIM(index_string, ', ');
+    index_string := index_string || ')';
+    RETURN index_string;
+END get_index_string;
+
+exec cmp_indexes('DEV', 'PROD');
+
+CREATE OR REPLACE PROCEDURE cmp_indexes(dev_schema_name VARCHAR2, prod_schema_name VARCHAR2)
+IS
+CURSOR get_indexes IS
+    SELECT DISTINCT dev_uniqueness, dev_index_name, prod_uniqueness, prod_index_name 
+    FROM
+        (SELECT ai.index_name dev_index_name, ai.uniqueness dev_uniqueness, ai.table_name dev_table_name, aic.column_name dev_column_name 
+        FROM all_indexes ai
+        INNER JOIN all_ind_columns aic
+        ON ai.index_name = aic.INDEX_NAME AND ai.owner = aic.INDEX_OWNER
+        WHERE ai.owner = UPPER(dev_schema_name)
+        AND GENERATED = 'N') dev
+    FULL OUTER JOIN
+        (SELECT ai.index_name prod_index_name, ai.uniqueness prod_uniqueness, ai.table_name prod_table_name, aic.column_name prod_column_name
+        FROM all_indexes ai
+        INNER JOIN all_ind_columns aic
+        ON ai.index_name = aic.index_name AND ai.owner = aic.index_owner
+        WHERE ai.owner = UPPER(prod_schema_name)
+        AND GENERATED = 'N') prod
+    ON dev.dev_table_name = prod.prod_table_name 
+    AND dev.dev_column_name = prod.prod_column_name;
+    buf VARCHAR2(500);
+BEGIN
+    FOR rec IN get_indexes
+    LOOP
+        IF rec.prod_index_name IS NULL THEN
+            buf := buf || 'CREATE ';
+            IF rec.dev_uniqueness != 'NONUNIQUE' THEN
+                buf := buf || rec.dev_uniqueness;
+            END IF;
+            buf := buf || ' INDEX ' || rec.dev_index_name || get_index_string(dev_schema_name, rec.dev_index_name) || ';';
+            DBMS_OUTPUT.PUT_LINE(buf);
+            buf := NULL;
+            CONTINUE;
+        END IF;
+        
+        IF rec.dev_index_name IS NULL THEN
+            DBMS_OUTPUT.PUT_LINE('DROP INDEX ' || rec.prod_index_name || ';');
+            CONTINUE;
+        END IF;
+        IF get_index_string(dev_schema_name, rec.dev_index_name)
+            !=
+            get_index_string(prod_schema_name, rec.prod_index_name)
+            OR rec.dev_uniqueness != rec.prod_uniqueness THEN
+            DBMS_OUTPUT.PUT_LINE('DROP INDEX ' || rec.prod_index_name || ';');
+            buf := buf || 'CREATE ';
+            IF rec.dev_uniqueness != 'NONUNIQUE' THEN
+                buf := buf || rec.dev_uniqueness;
+            END IF;
+            buf := buf || ' INDEX ' || rec.dev_index_name || get_index_string(dev_schema_name, rec.dev_index_name) || ';';
+            DBMS_OUTPUT.PUT_LINE(buf);
+            buf := NULL;
+        END IF;
+    END LOOP;
+END cmp_indexes;
+
+
+exec cmp_schemes('DEV', 'PROD');
+
 CREATE OR REPLACE PROCEDURE cmp_schemes(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
 IS
 BEGIN
     cmp_tables(dev_schema_name, prod_schema_name);
     cmp_functions(dev_schema_name, prod_schema_name);
     cmp_procedures(dev_schema_name, prod_schema_name);
+    cmp_indexes(dev_schema_name, prod_schema_name);
     EXECUTE IMMEDIATE 'TRUNCATE TABLE tables_to_create'; 
 END cmp_schemes;
-
-exec cmp_schemes('DEV', 'PROD');
-
 
 SELECT * FROM
     (SELECT NAME dev_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) dev_text
