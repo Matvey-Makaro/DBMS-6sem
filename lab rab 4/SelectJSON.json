@@ -47,9 +47,8 @@
              "comp_operator": "BETWEEN"}
         ],
         "join": [
-            {"type": "left",
-             "tab_name_or_select": "tab_name", 
-             "as": "as_name",
+            {"type": "LEFT",
+             "rhs": {"table_name": "tab_name", "select":null, "as": "as_name"},
              "on":[
                 {"post_and_or_operator": "AND",
                  "lhs_tab_name": "lhs_tab_name_or_null",

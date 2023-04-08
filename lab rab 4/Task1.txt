@@ -18,8 +18,10 @@ CREATE OR REPLACE PACKAGE json_parser AS
 FUNCTION parse_all_or_distinct(json_select IN JSON_OBJECT_T) RETURN VARCHAR2;
 FUNCTION parse_output_cols(json_cols IN JSON_ARRAY_T, tab_name IN VARCHAR2) RETURN VARCHAR2;
 FUNCTION parse_tables(json_tables IN JSON_ARRAY_T) RETURN VARCHAR2;
+FUNCTION parse_tab_name_or_select(table_obj IN JSON_OBJECT_T) RETURN VARCHAR2;
 FUNCTION parse_from(json_from IN JSON_ARRAY_T) RETURN VARCHAR2;
 FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2;
+FUNCTION parse_join(json_join IN JSON_ARRAY_T) RETURN VARCHAR2;
 FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2;
 FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2;
 FUNCTION read(dir VARCHAR2, fname VARCHAR2) RETURN VARCHAR2;
@@ -73,45 +75,50 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
     END parse_tables;
 
 
+    FUNCTION parse_tab_name_or_select(table_obj IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(1000);
+        is_as BOOLEAN := FALSE;
+    BEGIN
+        IF table_obj.has('table_name') AND table_obj.get_string('table_name') IS NOT NULL AND 
+          table_obj.has('select') AND table_obj.get_object('select') IS NOT NULL THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Error in parse_tab_name_or_select(). There is "table_name" and "select" sections');
+        END IF;
+
+        is_as := table_obj.has('as');
+        IF table_obj.has('table_name') THEN
+            buff := buff || table_obj.get_string('table_name');
+            IF is_as THEN
+                buff := buff || ' ' || table_obj.get_string('as'); 
+            END IF;
+        ELSIF table_obj.has('select') THEN
+            IF is_as THEN
+                buff := buff ||'(';
+            END IF;
+            buff := buff || parse_select(table_obj.get_object('select'));
+            IF is_as THEN
+                buff := buff || ') ' || table_obj.get_string('as');
+            END IF;
+        ELSE
+            RAISE_APPLICATION_ERROR(-20008, 'Error in parse_tab_name_or_select(). UNREACHABLE!');
+        END IF;
+
+        RETURN buff;
+    END parse_tab_name_or_select;
+
+
     FUNCTION parse_from(json_from IN JSON_ARRAY_T) RETURN VARCHAR2
     IS
         buff VARCHAR2(10000);
         table_obj JSON_OBJECT_T;
-        table_name VARCHAR2(100);
-        is_as BOOLEAN := FALSE;
     BEGIN
         FOR i IN 0..json_from.get_size - 1 LOOP
             table_obj := TREAT(json_from.get(i) AS JSON_OBJECT_T);
-            IF table_obj.has('table_name') AND table_obj.get_string('table_name') IS NOT NULL AND 
-              table_obj.has('select') AND table_obj.get_object('select') IS NOT NULL THEN
-                RAISE_APPLICATION_ERROR(-20007, 'Error in parse_from(). There is "table_name" and "select" sections');
-            END IF;
-            
-            is_as := table_obj.has('as');
-
-            IF table_obj.has('table_name') THEN
-                buff := buff || table_obj.get_string('table_name');
-                IF is_as THEN
-                    buff := buff || ' ' || table_obj.get_string('as'); 
-                END IF;
-            ELSIF table_obj.has('select') THEN
-                IF is_as THEN
-                    buff := buff ||'(';
-                END IF;
-                buff := buff || parse_select(table_obj.get_object('select'));
-                IF is_as THEN
-                    buff := buff || ') ' || table_obj.get_string('as');
-                END IF;
-            ELSE
-                RAISE_APPLICATION_ERROR(-20008, 'Error in parse_from(). UNREACHABLE!');
-            END IF;
-
-            buff := buff || ', ';
-
-            is_as := FALSE;
+            buff := buff || parse_tab_name_or_select(table_obj) || ', ';
         END LOOP;
         RETURN RTRIM(buff, ', ');
     END parse_from;
+
 
     FUNCTION parse_operand(condition_obj IN JSON_OBJECT_T, hs IN VARCHAR2) RETURN VARCHAR2
     IS
@@ -131,7 +138,7 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
             buff := buff || '.';
         END IF;
         IF condition_obj.get_string(hs || '_col_name_or_val') IS NULL THEN
-            buff := buff || parse_select(condition_obj.get_object(hs || '_col_name_or_val'));
+            buff := buff || parse_select(condition_obj.get_object(hs || '_col_name_or_val').get_object('select'));
         ELSE
             buff := buff || condition_obj.get_string(hs || '_col_name_or_val');
         END IF;
@@ -151,43 +158,72 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         RETURN parse_operand(condition_obj, 'rhs');
     END parse_rhs_operand;
 
-
-    FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2
+    FUNCTION parse_condition(condition_obj IN JSON_OBJECT_T) RETURN VARCHAR2
     IS
         buff VARCHAR2(10000);
-        condition_obj JSON_OBJECT_T;
         lhs VARCHAR2(1000);
         rhs VARCHAR2(1000);
         for_between VARCHAR2(1000);
         comp_operator VARCHAR2(30);
     BEGIN
+        IF NOT condition_obj.has('comp_operator') THEN
+            RAISE_APPLICATION_ERROR(-20010, 'Error in parse_condition(). There is not "comp_operator" section');
+        END IF;
+        comp_operator := condition_obj.get_string('comp_operator');
+        rhs := parse_rhs_operand(condition_obj);
+        IF comp_operator = 'EXISTS' or comp_operator = 'NOT EXISTS' THEN
+            buff := buff || comp_operator || '(' || rhs || ')';
+        ELSIF comp_operator = 'BETWEEN' THEN
+            lhs := parse_lhs_operand(condition_obj);
+            for_between := parse_operand(condition_obj, 'for_between');
+            buff := buff || lhs || ' BETWEEN ' || rhs || ' AND ' || for_between;
+        ELSE 
+            lhs := parse_lhs_operand(condition_obj);
+            buff := buff || lhs || ' ' || comp_operator || ' ' || rhs;
+        END IF;
+        IF condition_obj.has('post_and_or_operator') AND condition_obj.get_string('post_and_or_operator') IS NOT NULL THEN
+            buff := buff || ' ' || condition_obj.get_string('post_and_or_operator') || ' ';
+        END IF;
+
+        RETURN buff;
+    END parse_condition;
+
+    FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        condition_obj JSON_OBJECT_T;
+    BEGIN
         FOR i IN 0..json_where.get_size - 1 LOOP
             condition_obj := TREAT(json_where.get(i) AS JSON_OBJECT_T);
-            IF NOT condition_obj.has('comp_operator') THEN
-                RAISE_APPLICATION_ERROR(-20010, 'Error in parse_where(). There is not "comp_operator" section');
-            END IF;
-            comp_operator := condition_obj.get_string('comp_operator');
-            rhs := parse_rhs_operand(condition_obj);
-            IF comp_operator = 'EXISTS' or comp_operator = 'NOT EXISTS' THEN
-                buff := buff || comp_operator || '(' || rhs || ')';
-            ELSIF comp_operator = 'BETWEEN' THEN
-                lhs := parse_lhs_operand(condition_obj);
-                for_between := parse_operand(condition_obj, 'for_between');
-                buff := buff || lhs || ' BETWEEN ' || rhs || ' AND ' || for_between;
-            ELSE 
-                lhs := parse_lhs_operand(condition_obj);
-                buff := buff || lhs || ' ' || comp_operator || ' ' || rhs;
-            END IF;
-
-            IF condition_obj.has('post_and_or_operator') AND condition_obj.get_string('post_and_or_operator') IS NOT NULL THEN
-                buff := buff || ' ' || condition_obj.get_string('post_and_or_operator') || ' ';
-            END IF;
-
-            lhs := NULL;
-            rhs := NULL;
+            buff := buff || parse_condition(condition_obj);
         END LOOP;
         RETURN buff;
     END parse_where;
+
+    FUNCTION parse_join(json_join IN JSON_ARRAY_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        join_obj JSON_OBJECT_T;
+    BEGIN
+        FOR i in 0..json_join.get_size - 1 LOOP
+            join_obj := TREAT(json_join.get(i) AS JSON_OBJECT_T);
+            IF NOT join_obj.has('type') OR join_obj.get_string('type') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20011, 'Error in parse_join(). There is no "type"');
+            END IF;
+            buff := buff || join_obj.get_string('type') || ' JOIN ';
+
+            IF NOT join_obj.has('rhs') OR join_obj.get_object('rhs') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20011, 'Error in parse_join(). There is no "rhs"');
+            END IF;
+            buff := buff || parse_tab_name_or_select(join_obj.get_object('rhs')) || CHR(10) || 'ON ';
+
+            IF NOT join_obj.has('on') OR join_obj.get_array('on') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20012, 'Error in parse_join(). There is no "on"');
+            END IF;
+            buff := buff || parse_where(join_obj.get_array('on')) || CHR(10);
+        END LOOP;
+        RETURN buff;
+    END parse_join;
 
 
     FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
@@ -213,6 +249,10 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
 
         IF json_select.has('where') THEN
             buff := buff || 'WHERE ' || parse_where(json_select.get_array('where')) || CHR(10);
+        END IF;
+
+        IF json_select.has('join') THEN
+            buff := buff || parse_join(json_select.get_array('join'));
         END IF;
 
         RETURN buff;
