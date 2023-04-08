@@ -86,18 +86,15 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         END IF;
 
         is_as := table_obj.has('as');
-        IF table_obj.has('table_name') THEN
+        IF table_obj.has('table_name') AND table_obj.get_string('table_name') IS NOT NULL THEN
             buff := buff || table_obj.get_string('table_name');
             IF is_as THEN
                 buff := buff || ' ' || table_obj.get_string('as'); 
             END IF;
-        ELSIF table_obj.has('select') THEN
+        ELSIF table_obj.has('select') AND table_obj.get_object('select') IS NOT NULL THEN
+            buff := buff || '(' || parse_select(table_obj.get_object('select')) || ') ';
             IF is_as THEN
-                buff := buff ||'(';
-            END IF;
-            buff := buff || parse_select(table_obj.get_object('select'));
-            IF is_as THEN
-                buff := buff || ') ' || table_obj.get_string('as');
+                buff := buff || table_obj.get_string('as');
             END IF;
         ELSE
             RAISE_APPLICATION_ERROR(-20008, 'Error in parse_tab_name_or_select(). UNREACHABLE!');
@@ -138,7 +135,7 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
             buff := buff || '.';
         END IF;
         IF condition_obj.get_string(hs || '_col_name_or_val') IS NULL THEN
-            buff := buff || parse_select(condition_obj.get_object(hs || '_col_name_or_val').get_object('select'));
+            buff := buff || '(' ||parse_select(condition_obj.get_object(hs || '_col_name_or_val').get_object('select')) || ')';
         ELSE
             buff := buff || condition_obj.get_string(hs || '_col_name_or_val');
         END IF;
@@ -254,7 +251,8 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         IF json_select.has('join') THEN
             buff := buff || parse_join(json_select.get_array('join'));
         END IF;
-
+        
+        buff := buff || ';';
         RETURN buff;
     END parse_select;
 
