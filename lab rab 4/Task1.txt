@@ -6,80 +6,231 @@ create user lab4 identified by lab4;
 grant all privileges to lab4;
 
 
-CREATE OR REPLACE FUNCTION parse_all_or_distinct(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
-IS
-BEGIN
-    IF UPPER(json_select.get_string('all_or_distinct')) = 'DISTINCT' THEN
-        RETURN 'DISTINCT';
-    END IF;
-    RETURN NULL;
-END parse_all_or_distinct;
-
-
-CREATE OR REPLACE FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
-IS
-    buff VARCHAR2(10000);
-BEGIN
-    buff := 'SELECT ';
-    IF json_select.has('all_or_distinct') THEN
-        buff := buff || parse_all_or_distinct(json_select);
-    END IF;
-
-    IF NOT json_select.has('tables') THEN
-        DBMS_OUTPUT('Error in parse_select(). There is not "tables" section');
-        RETURN NULL;
-
-    RETURN buff;
-END parse_select;
-
-SELECT parse_json(read('TASK_DIR', 'SelectJSON.json')) FROM dual;
-
-CREATE OR REPLACE FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2
-IS
-    json_obj JSON_OBJECT_T;
-BEGIN
-    json_obj := JSON_OBJECT_T(json_str);
-    IF json_obj IS NULL THEN
-        DBMS_OUTPUT.PUT_LINE('Error in parse_json(). json_obj = NULL');
-        RETURN NULL;
-    ELSIF json_obj.has('select') THEN
-        RETURN parse_select(json_obj.get_object('select'));
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('Error in parse_json(). UNREACHABLE!');
-        RETURN NULL;
-    END IF;
-
-END parse_json;
-
-
-
 CREATE OR REPLACE DIRECTORY TASK_DIR AS 'E:\Projects\DBMS_JSON_FILES';
 
-SELECT read('TASK_DIR', 'SelectJSON.json') FROM dual;
+SELECT json_parser.parse_json(json_parser.read('TASK_DIR', 'SelectJSON.json')) FROM dual;
 
-CREATE OR REPLACE FUNCTION read(dir VARCHAR2, fname VARCHAR2) RETURN VARCHAR2
-IS
-    file UTL_FILE.FILE_TYPE;
-    buff VARCHAR2(10000);
-    str VARCHAR2(500);
-BEGIN
-    file := UTL_FILE.FOPEN(dir, fname, 'R', 32767);
-    IF NOT UTL_FILE.IS_OPEN(file) THEN
-        DBMS_OUTPUT.PUT_LINE('File ' || fname || ' does not open!');
+SELECT json_parser.read('TASK_DIR', 'SelectJSON.json') FROM dual;
+
+
+CREATE OR REPLACE PACKAGE json_parser AS
+FUNCTION parse_all_or_distinct(json_select IN JSON_OBJECT_T) RETURN VARCHAR2;
+FUNCTION parse_output_cols(json_cols IN JSON_ARRAY_T, tab_name IN VARCHAR2) RETURN VARCHAR2;
+FUNCTION parse_tables(json_tables IN JSON_ARRAY_T) RETURN VARCHAR2;
+FUNCTION parse_from(json_from IN JSON_ARRAY_T) RETURN VARCHAR2;
+FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2;
+FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2;
+FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2;
+FUNCTION read(dir VARCHAR2, fname VARCHAR2) RETURN VARCHAR2;
+END json_parser;
+
+
+CREATE OR REPLACE PACKAGE BODY json_parser AS
+    FUNCTION parse_all_or_distinct(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+    BEGIN
+        IF UPPER(json_select.get_string('all_or_distinct')) = 'DISTINCT' THEN
+            RETURN 'DISTINCT';
+        END IF;
         RETURN NULL;
-    END IF;
-
-    LOOP
-        BEGIN
-            UTL_FILE.GET_LINE(file, str);
-            buff := buff || str;
-            EXCEPTION
-                WHEN OTHERS THEN EXIT;
-        END;
-    END LOOP;
-    UTL_FILE.FCLOSE(file);
-    RETURN buff;
-END read;
+    END parse_all_or_distinct;
 
 
--- Для where стоит сделать оператор BETWEEN.
+    FUNCTION parse_output_cols(json_cols IN JSON_ARRAY_T, tab_name IN VARCHAR2) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        col_obj JSON_OBJECT_T;
+    BEGIN
+        FOR i in 0..json_cols.get_size - 1 LOOP
+            col_obj := TREAT(json_cols.get(i) AS JSON_OBJECT_T);
+            IF NOT col_obj.has('col_name') THEN
+                RAISE_APPLICATION_ERROR(-20005, 'Error in parse_output_cols(). There is not "col_name"');
+            END IF;
+            buff := buff || tab_name || '.' || col_obj.get_string('col_name');
+            IF col_obj.has('as') THEN
+                buff := buff || ' ' || col_obj.get_string('as'); 
+            END IF;
+            buff := buff || ', ';
+        END LOOP;
+        RETURN RTRIM(buff, ', ');
+    END parse_output_cols;
+
+
+    FUNCTION parse_tables(json_tables IN JSON_ARRAY_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        table_obj JSON_OBJECT_T;
+        table_name VARCHAR2(100);
+    BEGIN 
+        FOR i IN 0..json_tables.get_size - 1 LOOP
+            buff := buff || CHR(10);
+            table_obj := TREAT(json_tables.get(i) AS JSON_OBJECT_T);
+            table_name := table_obj.get_string('table_name');
+            buff := buff || parse_output_cols(table_obj.get_array('cols'), table_name) || ', ';
+        END LOOP;
+        RETURN RTRIM(buff, ', ');
+    END parse_tables;
+
+
+    FUNCTION parse_from(json_from IN JSON_ARRAY_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        table_obj JSON_OBJECT_T;
+        table_name VARCHAR2(100);
+        is_as BOOLEAN := FALSE;
+    BEGIN
+        FOR i IN 0..json_from.get_size - 1 LOOP
+            table_obj := TREAT(json_from.get(i) AS JSON_OBJECT_T);
+            IF table_obj.has('table_name') AND table_obj.get_string('table_name') IS NOT NULL AND 
+              table_obj.has('select') AND table_obj.get_object('select') IS NOT NULL THEN
+                RAISE_APPLICATION_ERROR(-20007, 'Error in parse_from(). There is "table_name" and "select" sections');
+            END IF;
+            
+            is_as := table_obj.has('as');
+
+            IF table_obj.has('table_name') THEN
+                buff := buff || table_obj.get_string('table_name');
+                IF is_as THEN
+                    buff := buff || ' ' || table_obj.get_string('as'); 
+                END IF;
+            ELSIF table_obj.has('select') THEN
+                IF is_as THEN
+                    buff := buff ||'(';
+                END IF;
+                buff := buff || parse_select(table_obj.get_object('select'));
+                IF is_as THEN
+                    buff := buff || ') ' || table_obj.get_string('as');
+                END IF;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20008, 'Error in parse_from(). UNREACHABLE!');
+            END IF;
+
+            buff := buff || ', ';
+
+            is_as := FALSE;
+        END LOOP;
+        RETURN RTRIM(buff, ', ');
+    END parse_from;
+
+
+    FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        condition_obj JSON_OBJECT_T;
+        lhs VARCHAR2(100);
+        rhs VARCHAR2(100);
+        comp_operator(10)
+        BOOLEAN is_dot_needed = FALSE;
+    BEGIN
+        FOR i IN 0..json_where.get_size - 1 LOOP
+            condition_obj := TREAT(json_where.get(i) AS JSON_OBJECT_T);
+            IF condition_obj.has('lhs_tab_name') AND condition_obj.get_string('lhs_tab_name') IS NOT NULL THEN
+                lhs := condition_obj.get_string('lhs_tab_name');
+                is_dot_needed = TRUE;
+            END IF;
+
+            IF NOT condition_obj.has('lhs_col_name_or_val') OR condition_obj.get_string('lhs_col_name_or_val') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20009, 'Error in parse_where(). There is no "lhs_col_name_or_val"');
+            END IF;
+
+            IF is_dot_needed THEN
+                lhs := lhs || '.';
+            END IF;
+            lhs := lhs || condition_obj.get_string('lhs_col_name_or_val');  -- TODO: Исправить, тут может быть и array и select.
+            is_dot_needed = FALSE;
+
+
+            IF condition_obj.has('rhs_tab_name') AND condition_obj.get_string('rhs_tab_name') IS NOT NULL THEN
+                rhs := condition_obj.get_string('rhs_tab_name');
+                is_dot_needed = TRUE;
+            END IF;
+
+            IF NOT condition_obj.has('rhs_col_name_or_val') OR condition_obj.get_string('rhs_col_name_or_val') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20009, 'Error in parse_where(). There is no "rhs_col_name_or_val"');
+            END IF;
+
+            IF is_dot_needed THEN
+                rhs := rhs || '.';
+            END IF;
+            rhs := rhs || condition_obj.get_string('rhs_col_name_or_val');
+
+
+            
+
+            lhs := NULL;
+            rhs := NULL;
+            is_dot_needed = FALSE;
+        END LOOP;
+    END parse_where;
+
+
+    FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+    BEGIN
+        buff := 'SELECT ';
+        IF json_select.has('all_or_distinct') THEN
+            buff := buff || parse_all_or_distinct(json_select);
+        END IF;
+
+        IF NOT json_select.has('tables') THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Error in parse_select(). There is not "tables" section');
+        END IF;
+
+        buff := buff || ' ' || parse_tables(json_select.get_array('tables'));
+
+        IF NOT json_select.has('from') THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Error in parse_select(). There is not "from" section');
+        END IF;
+
+        buff := buff || CHR(10) || 'FROM ' || parse_from(json_select.get_array('from')) || CHR(10);
+
+        IF json_select.has('where') THEN
+            buff := buff || 'WHERE ' || parse_where(json_select.get_array('where')) || CHR(10);
+        END IF;
+
+
+        RETURN buff;
+    END parse_select;
+
+
+    FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2
+    IS
+        json_obj JSON_OBJECT_T;
+    BEGIN
+        json_obj := JSON_OBJECT_T(json_str);
+        IF json_obj IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Error in parse_json(). json_obj = NULL');
+        ELSIF json_obj.has('select') THEN
+            RETURN parse_select(json_obj.get_object('select'));
+        ELSE
+            RAISE_APPLICATION_ERROR(-20002, 'Error in parse_json(). UNREACHABLE!');
+        END IF;
+
+    END parse_json;
+
+
+    FUNCTION read(dir VARCHAR2, fname VARCHAR2) RETURN VARCHAR2
+    IS
+        file UTL_FILE.FILE_TYPE;
+        buff VARCHAR2(10000);
+        str VARCHAR2(500);
+    BEGIN
+        file := UTL_FILE.FOPEN(dir, fname, 'R', 32767);
+        IF NOT UTL_FILE.IS_OPEN(file) THEN
+            DBMS_OUTPUT.PUT_LINE('File ' || fname || ' does not open!');
+            RETURN NULL;
+        END IF;
+
+        LOOP
+            BEGIN
+                UTL_FILE.GET_LINE(file, str);
+                buff := buff || str;
+                EXCEPTION
+                    WHEN OTHERS THEN EXIT;
+            END;
+        END LOOP;
+        UTL_FILE.FCLOSE(file);
+        RETURN buff;
+    END read;
+END json_parser;
