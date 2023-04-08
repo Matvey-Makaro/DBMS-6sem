@@ -8,9 +8,10 @@ grant all privileges to lab4;
 
 CREATE OR REPLACE DIRECTORY TASK_DIR AS 'E:\Projects\DBMS_JSON_FILES';
 
-SELECT json_parser.parse_json(json_parser.read('TASK_DIR', 'SelectJSON.json')) FROM dual;
-
 SELECT json_parser.read('TASK_DIR', 'SelectJSON.json') FROM dual;
+
+
+SELECT json_parser.parse_json(json_parser.read('TASK_DIR', 'SelectJSON.json')) FROM dual;
 
 
 CREATE OR REPLACE PACKAGE json_parser AS
@@ -112,55 +113,80 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         RETURN RTRIM(buff, ', ');
     END parse_from;
 
+    FUNCTION parse_operand(condition_obj IN JSON_OBJECT_T, hs IN VARCHAR2) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(1000);
+        is_dot_needed BOOLEAN := FALSE;
+    BEGIN
+        IF condition_obj.has(hs || '_tab_name') AND condition_obj.get_string(hs ||'_tab_name') IS NOT NULL THEN
+            buff := condition_obj.get_string(hs || '_tab_name');
+            is_dot_needed := TRUE;
+        END IF;
+
+        IF NOT condition_obj.has(hs ||'_col_name_or_val') THEN
+            RAISE_APPLICATION_ERROR(-20009, 'Error in parse_where(). There is no "' || hs ||'_col_name_or_val"');
+        END IF;
+
+        IF is_dot_needed THEN
+            buff := buff || '.';
+        END IF;
+        IF condition_obj.get_string(hs || '_col_name_or_val') IS NULL THEN
+            buff := buff || parse_select(condition_obj.get_object(hs || '_col_name_or_val'));
+        ELSE
+            buff := buff || condition_obj.get_string(hs || '_col_name_or_val');
+        END IF;
+        RETURN buff;
+    END parse_operand;
+
+    FUNCTION parse_lhs_operand(condition_obj IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+    BEGIN
+        RETURN parse_operand(condition_obj, 'lhs');
+    END parse_lhs_operand;
+
+
+    FUNCTION parse_rhs_operand(condition_obj IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+    BEGIN
+        RETURN parse_operand(condition_obj, 'rhs');
+    END parse_rhs_operand;
+
 
     FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2
     IS
         buff VARCHAR2(10000);
         condition_obj JSON_OBJECT_T;
-        lhs VARCHAR2(100);
-        rhs VARCHAR2(100);
-        comp_operator(10)
-        BOOLEAN is_dot_needed = FALSE;
+        lhs VARCHAR2(1000);
+        rhs VARCHAR2(1000);
+        for_between VARCHAR2(1000);
+        comp_operator VARCHAR2(30);
     BEGIN
         FOR i IN 0..json_where.get_size - 1 LOOP
             condition_obj := TREAT(json_where.get(i) AS JSON_OBJECT_T);
-            IF condition_obj.has('lhs_tab_name') AND condition_obj.get_string('lhs_tab_name') IS NOT NULL THEN
-                lhs := condition_obj.get_string('lhs_tab_name');
-                is_dot_needed = TRUE;
+            IF NOT condition_obj.has('comp_operator') THEN
+                RAISE_APPLICATION_ERROR(-20010, 'Error in parse_where(). There is not "comp_operator" section');
+            END IF;
+            comp_operator := condition_obj.get_string('comp_operator');
+            rhs := parse_rhs_operand(condition_obj);
+            IF comp_operator = 'EXISTS' or comp_operator = 'NOT EXISTS' THEN
+                buff := buff || comp_operator || '(' || rhs || ')';
+            ELSIF comp_operator = 'BETWEEN' THEN
+                lhs := parse_lhs_operand(condition_obj);
+                for_between := parse_operand(condition_obj, 'for_between');
+                buff := buff || lhs || ' BETWEEN ' || rhs || ' AND ' || for_between;
+            ELSE 
+                lhs := parse_lhs_operand(condition_obj);
+                buff := buff || lhs || ' ' || comp_operator || ' ' || rhs;
             END IF;
 
-            IF NOT condition_obj.has('lhs_col_name_or_val') OR condition_obj.get_string('lhs_col_name_or_val') IS NULL THEN
-                RAISE_APPLICATION_ERROR(-20009, 'Error in parse_where(). There is no "lhs_col_name_or_val"');
+            IF condition_obj.has('post_and_or_operator') AND condition_obj.get_string('post_and_or_operator') IS NOT NULL THEN
+                buff := buff || ' ' || condition_obj.get_string('post_and_or_operator') || ' ';
             END IF;
-
-            IF is_dot_needed THEN
-                lhs := lhs || '.';
-            END IF;
-            lhs := lhs || condition_obj.get_string('lhs_col_name_or_val');  -- TODO: Исправить, тут может быть и array и select.
-            is_dot_needed = FALSE;
-
-
-            IF condition_obj.has('rhs_tab_name') AND condition_obj.get_string('rhs_tab_name') IS NOT NULL THEN
-                rhs := condition_obj.get_string('rhs_tab_name');
-                is_dot_needed = TRUE;
-            END IF;
-
-            IF NOT condition_obj.has('rhs_col_name_or_val') OR condition_obj.get_string('rhs_col_name_or_val') IS NULL THEN
-                RAISE_APPLICATION_ERROR(-20009, 'Error in parse_where(). There is no "rhs_col_name_or_val"');
-            END IF;
-
-            IF is_dot_needed THEN
-                rhs := rhs || '.';
-            END IF;
-            rhs := rhs || condition_obj.get_string('rhs_col_name_or_val');
-
-
-            
 
             lhs := NULL;
             rhs := NULL;
-            is_dot_needed = FALSE;
         END LOOP;
+        RETURN buff;
     END parse_where;
 
 
@@ -188,7 +214,6 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         IF json_select.has('where') THEN
             buff := buff || 'WHERE ' || parse_where(json_select.get_array('where')) || CHR(10);
         END IF;
-
 
         RETURN buff;
     END parse_select;
