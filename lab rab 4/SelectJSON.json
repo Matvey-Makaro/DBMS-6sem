@@ -1,0 +1,35 @@
+{
+    "select": {
+        "all_or_distinct": "DISTINCT",
+        "tables": [ {
+            "table_name": "table_name",
+            "cols": [
+                {"col_name": "col_name", "as": "col"}
+            ]
+            }
+        ],
+        "from": [{"table_name": "table_name", "as": "tab_name"}],
+        "where": [
+            {"post_and_or_operator": "AND",
+             "lhs_tab_name": "lhs_tab_name_or_null",
+             "lhs_col_name_or_val": "lhs_col_name_or_val",
+             "rhs_tab_name": "rhs_tab_name_or_null",
+             "rhs_col_name_or_val": "rhs_col_name_or_val",
+             "comp_operator": "<"}
+        ],
+        "join": [
+            {"type": "left",
+             "rhs_table_or_select": {"tab_name_or_select": "tab_name", "as": "as_name"},
+             "on":[
+                {"post_and_or_operator": "AND",
+                 "lhs_tab_name": "lhs_tab_name_or_null",
+                 "lhs_col_name_or_val": "lhs_col_name_or_val",
+                 "rhs_tab_name": "rhs_tab_name_or_null",
+                 "rhs_col_name_or_val": "rhs_col_name_or_val",
+                 "comp_operator": "="}
+             ]}
+        ]  
+    }
+}
+
+// Для where стоит сделать оператор BETWEEN.

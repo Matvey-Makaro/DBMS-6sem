@@ -4,3 +4,5 @@ alter session set "_ORACLE_SCRIPT"=true;
 create user lab4 identified by lab4;
 --далее выдаем права
 grant all privileges to lab4;
+
+
