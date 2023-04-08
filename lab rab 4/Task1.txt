@@ -6,3 +6,80 @@ create user lab4 identified by lab4;
 grant all privileges to lab4;
 
 
+CREATE OR REPLACE FUNCTION parse_all_or_distinct(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
+IS
+BEGIN
+    IF UPPER(json_select.get_string('all_or_distinct')) = 'DISTINCT' THEN
+        RETURN 'DISTINCT';
+    END IF;
+    RETURN NULL;
+END parse_all_or_distinct;
+
+
+CREATE OR REPLACE FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2
+IS
+    buff VARCHAR2(10000);
+BEGIN
+    buff := 'SELECT ';
+    IF json_select.has('all_or_distinct') THEN
+        buff := buff || parse_all_or_distinct(json_select);
+    END IF;
+
+    IF NOT json_select.has('tables') THEN
+        DBMS_OUTPUT('Error in parse_select(). There is not "tables" section');
+        RETURN NULL;
+
+    RETURN buff;
+END parse_select;
+
+SELECT parse_json(read('TASK_DIR', 'SelectJSON.json')) FROM dual;
+
+CREATE OR REPLACE FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2
+IS
+    json_obj JSON_OBJECT_T;
+BEGIN
+    json_obj := JSON_OBJECT_T(json_str);
+    IF json_obj IS NULL THEN
+        DBMS_OUTPUT.PUT_LINE('Error in parse_json(). json_obj = NULL');
+        RETURN NULL;
+    ELSIF json_obj.has('select') THEN
+        RETURN parse_select(json_obj.get_object('select'));
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('Error in parse_json(). UNREACHABLE!');
+        RETURN NULL;
+    END IF;
+
+END parse_json;
+
+
+
+CREATE OR REPLACE DIRECTORY TASK_DIR AS 'E:\Projects\DBMS_JSON_FILES';
+
+SELECT read('TASK_DIR', 'SelectJSON.json') FROM dual;
+
+CREATE OR REPLACE FUNCTION read(dir VARCHAR2, fname VARCHAR2) RETURN VARCHAR2
+IS
+    file UTL_FILE.FILE_TYPE;
+    buff VARCHAR2(10000);
+    str VARCHAR2(500);
+BEGIN
+    file := UTL_FILE.FOPEN(dir, fname, 'R', 32767);
+    IF NOT UTL_FILE.IS_OPEN(file) THEN
+        DBMS_OUTPUT.PUT_LINE('File ' || fname || ' does not open!');
+        RETURN NULL;
+    END IF;
+
+    LOOP
+        BEGIN
+            UTL_FILE.GET_LINE(file, str);
+            buff := buff || str;
+            EXCEPTION
+                WHEN OTHERS THEN EXIT;
+        END;
+    END LOOP;
+    UTL_FILE.FCLOSE(file);
+    RETURN buff;
+END read;
+
+
+-- Для where стоит сделать оператор BETWEEN.
