@@ -573,7 +573,7 @@ BEGIN
         ELSIF rec.prod_name IS NULL THEN
             add_object(dev_schema_name, obj_type, rec.dev_name);
         ELSIF get_callable_text(dev_schema_name, obj_type, rec.dev_name) != get_callable_text(prod_schema_name, obj_type, rec.prod_name) THEN
-            DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || UPPER(rec.prod_name) || ';');
+            DBMS_OUTPUT.PUT_LINE('DROP ' || UPPER(obj_type) || ' ' || UPPER(rec.prod_name) || ';');
             add_object(dev_schema_name, obj_type, rec.dev_name);
         END IF;
     END LOOP;
@@ -710,7 +710,7 @@ END cmp_packages;
 
 
 
-exec cmp_schemes('DEV', 'PROD');
+exec cmp_schemes('DEV', 'REAL_PROD');
 
 CREATE OR REPLACE PROCEDURE cmp_schemes(dev_schema_name IN VARCHAR2, prod_schema_name IN VARCHAR2)
 IS
@@ -722,14 +722,5 @@ BEGIN
     cmp_indexes(dev_schema_name, prod_schema_name);
     EXECUTE IMMEDIATE 'TRUNCATE TABLE tables_to_create'; 
 END cmp_schemes;
-
-SELECT * FROM
-    (SELECT NAME dev_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) dev_text
-    FROM ALL_SOURCE WHERE OWNER = UPPER('DEV') AND TYPE = UPPER('FUNCTION')) dev
-    FULL OUTER JOIN 
-    (SELECT NAME prod_name, UPPER(TRIM(' ' FROM (TRANSLATE(text, CHR(10) || CHR(13), ' ')))) prod_text
-    FROM ALL_SOURCE WHERE OWNER = UPPER('PROD') AND TYPE = UPPER('FUNCTION')) prod
-    ON dev.dev_name = prod.prod_name;
--- test
 
 

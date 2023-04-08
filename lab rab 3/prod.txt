@@ -1,7 +1,7 @@
 -- переход в старый режим
 alter session set "_ORACLE_SCRIPT"=true; 
 
-create user prod identified by admin; --создаем пользователя prod с паролем admin
+create user real_prod identified by admin; --создаем пользователя prod с паролем admin
 --далее выдаем права
 grant all privileges to prod;
 
@@ -12,3 +12,10 @@ id NUMBER GENERATED ALWAYS AS IDENTITY
 val NUMBER,
 CONSTRAINT mytabel_pk PRIMARY KEY(id)
 );
+
+CREATE OR REPLACE FUNCTION ret_num(num NUMBER) RETURN NUMBER
+IS
+BEGIN
+    DBMS_OUTPUT.PUT_LINE(num);
+    RETURN num;
+END ret_num;
