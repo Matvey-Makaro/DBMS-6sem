@@ -1,0 +1,18 @@
+{
+    "DML": {
+        "type" : "insert",
+        "table_name": "table_name",
+        "cols": [{"col_name": "col1"}, {"col_name": "col2"}],
+        "values": [{"val": "1", "select": null}, {"val": "2", "select": null}],
+        "where": [
+            {"post_and_or_operator": "AND",
+             "lhs_tab_name": null,
+             "lhs_col_name_or_val": "col1",
+             "rhs_tab_name": null,
+             "rhs_col_name_or_val": "col2",
+             "for_between_tab_name": null,
+             "for_between_col_name_or_val": null,
+             "comp_operator": "<"}
+        ]
+    }
+}
