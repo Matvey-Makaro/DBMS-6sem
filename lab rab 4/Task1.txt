@@ -12,10 +12,11 @@ SELECT json_parser.read('TASK_DIR', 'SelectJSON.json') FROM dual;
 
 
 -- TODO: Сейчас в values все рассматривается как значение, и нельзя задать строку(можно с помощью "\"").
--- TODO: Добавить LIKE.
 SELECT json_parser.parse_json(json_parser.read('TASK_DIR', 'SelectJSON.json')) FROM dual;
 
 SELECT json_parser.parse_json(json_parser.read('TASK_DIR', 'DML_JSON.json')) FROM dual;
+
+SELECT json_parser.parse_json(json_parser.read('TASK_DIR', 'DDL_JSON.json')) FROM dual;
 
 
 CREATE OR REPLACE PACKAGE json_parser AS
@@ -28,6 +29,7 @@ FUNCTION parse_where(json_where IN JSON_ARRAY_T) RETURN VARCHAR2;
 FUNCTION parse_join(json_join IN JSON_ARRAY_T) RETURN VARCHAR2;
 FUNCTION parse_select(json_select IN JSON_OBJECT_T) RETURN VARCHAR2;
 FUNCTION parse_dml(json_dml IN JSON_OBJECT_T) RETURN VARCHAR2;
+FUNCTION parse_ddl(json_ddl IN JSON_OBJECT_T) RETURN VARCHAR2;
 FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2;
 FUNCTION read(dir VARCHAR2, fname VARCHAR2) RETURN VARCHAR2;
 END json_parser;
@@ -370,7 +372,7 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
     BEGIN
         buff := 'UPDATE ';
         IF NOT json_dml.has('table_name') OR json_dml.get_string('table_name') IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_dml(). There is no "table_name" section');
+            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_update(). There is no "table_name" section');
         END IF;
         tab_name := json_dml.get_string('table_name');
         buff := buff || tab_name || ' SET ' || parse_cols_values_for_update(json_dml);
@@ -385,7 +387,7 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
     BEGIN
         buff := 'DELETE FROM ';
         IF NOT json_dml.has('table_name') OR json_dml.get_string('table_name') IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_dml(). There is no "table_name" section');
+            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_delete(). There is no "table_name" section');
         END IF;
         tab_name := json_dml.get_string('table_name');
         buff := buff || tab_name;
@@ -422,6 +424,86 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
     END parse_dml;
 
 
+    FUNCTION parse_ddl_cols(json_cols IN JSON_ARRAY_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        col_obj JSON_OBJECT_T;
+    BEGIN
+        FOR i in 0..json_cols.get_size - 1 LOOP
+            col_obj := TREAT(json_cols.get(i) AS JSON_OBJECT_T);
+            IF NOT col_obj.has('col_name') OR col_obj.get_string('col_name') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20005, 'Error in parse_ddl_cols(). There is not "col_name"');
+            END IF;
+            buff := buff || col_obj.get_string('col_name') || ' ';
+            
+            IF NOT col_obj.has('data_type') OR col_obj.get_string('data_type') IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20020, 'Error in parse_ddl_cols(). There is not "data_type"');
+            END IF;
+            buff := buff || col_obj.get_string('data_type');
+
+            IF col_obj.has('constraint') AND col_obj.get_string('constraint') IS NOT NULL THEN
+                buff := buff || ' ' || col_obj.get_string('constraint');
+            END IF;
+            
+            buff := buff || ',' || CHR(10);
+        END LOOP;
+
+        RETURN RTRIM(buff, ',' || CHR(10)); 
+    END parse_ddl_cols;
+
+
+    FUNCTION parse_create_table(json_ddl IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+    BEGIN
+        buff := 'CREATE TABLE ';
+        IF NOT json_ddl.has('table_name') OR json_ddl.get_string('table_name') IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_create_table(). There is no "table_name" section');
+        END IF;
+        buff := buff || json_ddl.get_string('table_name') || ' (' || CHR(10);
+
+        IF NOT json_ddl.has('cols') OR json_ddl.get_array('cols') IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_create_table(). There is no "cols" section');
+        END IF;
+        buff := buff || parse_ddl_cols(json_ddl.get_array('cols'));
+
+        RETURN buff || CHR(10) || ');';
+    END parse_create_table;
+
+
+    FUNCTION parse_drop_table(json_ddl IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+    BEGIN
+        buff := 'DROP TABLE ';
+        IF NOT json_ddl.has('table_name') OR json_ddl.get_string('table_name') IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20012, 'Error in parse_drop_table(). There is no "table_name" section');
+        END IF;
+        buff := buff || json_ddl.get_string('table_name') || ';';
+        RETURN buff;
+    END parse_drop_table;
+
+
+    FUNCTION parse_ddl(json_ddl IN JSON_OBJECT_T) RETURN VARCHAR2
+    IS
+        buff VARCHAR2(10000);
+        ddl_type VARCHAR2(20);
+    BEGIN
+        IF NOT json_ddl.has('type') OR json_ddl.get_string('type') IS NULL THEN
+           RAISE_APPLICATION_ERROR(-20012, 'Error in parse_ddl(). There is no "type" section'); 
+        END IF;
+        ddl_type := json_ddl.get_string('type');
+
+        IF UPPER(ddl_type) = 'CREATE' THEN
+            RETURN parse_create_table(json_ddl);
+        ELSIF UPPER(ddl_type) = 'DROP' THEN
+            RETURN parse_drop_table(json_ddl);
+        ELSE
+            RAISE_APPLICATION_ERROR(-20022, 'Error in parse_ddl(). UNREACHABLE!'); 
+        END IF;
+    END parse_ddl;
+
+
     FUNCTION parse_json(json_str IN VARCHAR2) RETURN VARCHAR2
     IS
         json_obj JSON_OBJECT_T;
@@ -433,6 +515,8 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
             RETURN parse_select(json_obj.get_object('select')) || ';';
         ELSIF json_obj.has('DML') THEN
             RETURN parse_dml(json_obj.get_object('DML'));
+        ELSIF json_obj.has('DDL') THEN
+            RETURN parse_ddl(json_obj.get_object('DDL'));
         ELSE
             RAISE_APPLICATION_ERROR(-20002, 'Error in parse_json(). UNREACHABLE!');
         END IF;

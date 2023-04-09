@@ -1,0 +1,9 @@
+{
+    "DDL": {
+        "type": "drop",
+        "table_name" : "tab_name",
+        "cols": [{"col_name": "col1", "data_type": "NUMBER", "constraint": "PRIMARY KEY"}, 
+        {"col_name": "col2",  "data_type": "VARCHAR2(100)", "constraint": "UNIQUE"}, 
+        {"col_name": "col3", "data_type": "VARCHAR2(100)", "constraint":null}]
+    }
+}
