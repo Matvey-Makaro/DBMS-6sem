@@ -262,7 +262,6 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
             buff := buff || parse_join(json_select.get_array('join'));
         END IF;
         
-        buff := buff || ';';
         RETURN buff;
     END parse_select;
 
@@ -326,6 +325,7 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         RETURN buff;
     END parse_insert;
 
+
     FUNCTION parse_cols_values_for_update(json_dml IN JSON_OBJECT_T) RETURN VARCHAR2
     IS
         buff VARCHAR2(10000);
@@ -356,9 +356,10 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
                 RAISE_APPLICATION_ERROR(-20018, 'Error in parse_cols_values_for_update().  There is no "col_name" section in cols');
             END IF;
 
-
+            buff := buff || col_obj.get_string('col_name') || ' = ' || parse_value(val_obj) || ', ';
         END LOOP;
 
+        RETURN RTRIM(buff, ', ');
     END parse_cols_values_for_update;
 
 
@@ -372,18 +373,24 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
             RAISE_APPLICATION_ERROR(-20012, 'Error in parse_dml(). There is no "table_name" section');
         END IF;
         tab_name := json_dml.get_string('table_name');
-        buff := buff || tab_name || ' SET ';
+        buff := buff || tab_name || ' SET ' || parse_cols_values_for_update(json_dml);
+        RETURN buff;
     END parse_update;
+
 
     FUNCTION parse_delete(json_dml IN JSON_OBJECT_T) RETURN VARCHAR2
     IS
         buff VARCHAR2(10000);
         tab_name VARCHAR2(128);
     BEGIN
-    IF NOT json_dml.has('table_name') OR json_dml.get_string('table_name') IS NULL THEN
+        buff := 'DELETE FROM ';
+        IF NOT json_dml.has('table_name') OR json_dml.get_string('table_name') IS NULL THEN
             RAISE_APPLICATION_ERROR(-20012, 'Error in parse_dml(). There is no "table_name" section');
         END IF;
         tab_name := json_dml.get_string('table_name');
+        buff := buff || tab_name;
+
+        RETURN buff;
     END parse_delete;
 
 
@@ -406,8 +413,12 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
             buff := parse_update(json_dml);
         END IF;
 
-        
+        IF json_dml.has('where') THEN
+            buff := buff || ' WHERE ' || parse_where(json_dml.get_array('where'));
+        END IF;
+        buff := buff || ';';
 
+        RETURN buff;
     END parse_dml;
 
 
@@ -419,7 +430,7 @@ CREATE OR REPLACE PACKAGE BODY json_parser AS
         IF json_obj IS NULL THEN
             RAISE_APPLICATION_ERROR(-20001, 'Error in parse_json(). json_obj = NULL');
         ELSIF json_obj.has('select') THEN
-            RETURN parse_select(json_obj.get_object('select'));
+            RETURN parse_select(json_obj.get_object('select')) || ';';
         ELSIF json_obj.has('DML') THEN
             RETURN parse_dml(json_obj.get_object('DML'));
         ELSE
