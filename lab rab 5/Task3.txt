@@ -12,7 +12,7 @@ ALTER TRIGGER save_students_history_trigger ENABLE;
 
 SELECT HISTORY_ID, OPERATION, TO_CHAR(OP_DATE, 'YYYY-MM-DD HH24:MI:SS') oper_date FROM HISTORY;
 
-exec restore_by_history.restore(TO_DATE('2023-04-09 19:57:00', 'YYYY-MM-DD HH24:MI:SS'));
+exec restore_by_history.restore(TO_DATE('2023-04-09 22:21:11', 'YYYY-MM-DD HH24:MI:SS'));
 
 exec restore_by_history.restore(60000);
 
